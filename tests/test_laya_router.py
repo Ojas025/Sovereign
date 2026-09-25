@@ -103,6 +103,43 @@ async def test_weakest_question_confidence_gates_to_fallback() -> None:
     assert fallback.calls == 1
 
 
+async def test_ordinal_difficulty_distribution_passes_gate() -> None:
+    """Adjacent bucket spread (e.g. 0.48 on class 1, 0.38 on class 2) maintains
+    ordinal certainty.
+    """
+    payload = {
+        "answers": {
+            "intent": {
+                "type": "choice",
+                "choice": "code_gen",
+                "confidence": 0.85,
+                "answer_confidence": 0.85,
+            },
+            "difficulty": {
+                "type": "score",
+                "score": 1.6,
+                "probabilities": {"0": 0.05, "1": 0.48, "2": 0.38, "3": 0.09},
+                "confidence": 0.48,
+                "answer_confidence": 0.48,
+            },
+            "needs_tools": {
+                "type": "noul",
+                "noul": 0.9,
+                "confidence": 0.9,
+                "answer_confidence": 0.9,
+            },
+        }
+    }
+    router, fallback = router_with(FakeAgent(payload=payload))
+
+    result = await router.classify("write a python script")
+
+    assert result.backend == "laya"
+    assert result.intent == "code_gen"
+    assert result.confidence == 0.85
+    assert fallback.calls == 0
+
+
 async def test_inference_error_falls_back_every_turn() -> None:
     agent = FakeAgent(error=RuntimeError("cuda oom"))
     router, fallback = router_with(agent)

@@ -50,7 +50,7 @@ def _ctx_segment(state: TuiState, config: Config) -> tuple[str, str]:
     """ctx usage against the routed tier's profile; '-' until a route exists."""
     if not state.tier:
         return ("", "ctx:-")
-    profile_name = config.routing.tiers.get(state.tier)
+    profile_name = config.routing.tiers.get(state.tier, state.tier)
     profile = config.models.profiles.get(profile_name) if profile_name else None
     if profile is None:
         return ("", "ctx:-")

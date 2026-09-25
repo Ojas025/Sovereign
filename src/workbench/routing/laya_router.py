@@ -86,10 +86,21 @@ class LayaRouter:
             difficulty = float(answers["difficulty"]["score"])
             needs_tools = float(answers["needs_tools"]["noul"]) >= _NEEDS_TOOLS_THRESHOLD
             # weakest-link: trust the classification only if every question is
-            # confident — a mushy difficulty must not drive the tier threshold
-            confidence = min(
-                float(answers[question]["answer_confidence"]) for question in _QUESTIONS
-            )
+            # confident — a mushy difficulty must not drive the tier threshold.
+            # For 4-class ordinal difficulty, probability mass naturally spreads across
+            # adjacent classes (e.g. 1 and 2); top-2 mass evaluates ordinal certainty.
+            diff_conf = float(answers["difficulty"]["answer_confidence"])
+            diff_probs = answers["difficulty"].get("probabilities")
+            if isinstance(diff_probs, dict) and len(diff_probs) > 1:
+                try:
+                    prob_values = [float(v) for v in diff_probs.values()]
+                    diff_conf = float(sum(sorted(prob_values, reverse=True)[:2]))
+                except (ValueError, TypeError):
+                    pass
+
+            intent_conf = float(answers["intent"]["answer_confidence"])
+            tools_conf = float(answers["needs_tools"]["answer_confidence"])
+            confidence = min(intent_conf, diff_conf, tools_conf)
         except Exception as exc:
             logger.warning("laya inference failed, using heuristic: %s", exc)
             return await self._fallback.classify(message)

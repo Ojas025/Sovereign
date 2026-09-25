@@ -182,6 +182,44 @@ async def test_model_without_args_shows_current_tier_and_pin(tmp_path: Path) -> 
     text = printed_text(ui)
     assert "small" in text
     assert "pinned" in text
+    assert "coder" in text
+
+
+async def test_model_accepts_model_stem_and_filename(tmp_path: Path) -> None:
+    context, session = make_context(tmp_path)
+    ui = FakeUI()
+    register_commands(ui, context)
+
+    await arun(ui, "model", "coder.gguf")
+
+    assert session.pinned_tier == "mid"
+    assert session.tier == "mid"
+    assert context.state.tier == "mid"
+    assert context.state.model == "coder"
+
+
+async def test_model_accepts_fuzzy_substring(tmp_path: Path) -> None:
+    context, session = make_context(tmp_path)
+    ui = FakeUI()
+    register_commands(ui, context)
+
+    await arun(ui, "model", "code")
+
+    assert session.pinned_tier == "mid"
+    assert context.state.model == "coder"
+
+
+async def test_model_pin_updates_state_model_and_tier_immediately(tmp_path: Path) -> None:
+    context, session = make_context(tmp_path)
+    ui = FakeUI()
+    register_commands(ui, context)
+
+    await arun(ui, "model", "small")
+
+    assert session.pinned_tier == "small"
+    assert context.state.tier == "small"
+    assert context.state.model == "small"
+
 
 
 # --- /models, /plan, /stats, /router --------------------------------------------------

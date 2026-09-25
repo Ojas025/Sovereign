@@ -11,10 +11,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from agentui import Session
 
+from workbench.agent.loop import resolve_model
 from workbench.config import Config
 from workbench.core.registry import Registry
 from workbench.core.session import Plan, SessionStore
@@ -57,26 +59,51 @@ def _builtins(ctx: CommandContext) -> list[tuple[str, CommandHandler, str]]:
         name = args.strip()
         if not name:
             pin = f" (pinned: {session.pinned_tier})" if session.pinned_tier else ""
-            known = ", ".join(("auto", *sorted(tiers)))
-            ui.print(f"[dim]tier: {session.tier or '-'}{pin} · available: {known}[/dim]")
+            active_tier = session.tier or "-"
+            active_model = ctx.state.model or (
+                resolve_model(ctx.config, session.tier) if session.tier else "-"
+            )
+            known_tiers = ", ".join(sorted(tiers))
+            avail: list[str] = ["auto"]
+            for prof_name, profile in sorted(ctx.config.models.profiles.items()):
+                stem = Path(profile.path).stem if profile.path else prof_name
+                mapped_tier = next((t for t, p in tiers.items() if p == prof_name), None)
+                tier_info = f" [{mapped_tier}]" if mapped_tier else ""
+                avail.append(f"{prof_name} ({stem}){tier_info}")
+            ui.print(
+                f"[dim]tier: {active_tier}{pin} · model: {active_model} · "
+                f"available: {', '.join(avail)} (tiers: {known_tiers})[/dim]"
+            )
             return
         if name == "auto":
             session.pinned_tier = None
             ui.print("[dim]pin cleared — routing is automatic again[/dim]")
             return
-        tier = _resolve_tier(ctx.config, name)
-        if tier is None:
+        target = _resolve_target(ctx.config, name)
+        if target is None:
             profiles = ", ".join(sorted(ctx.config.models.profiles)) or "(none)"
+            stems = ", ".join(
+                sorted(
+                    Path(p.path).stem
+                    for p in ctx.config.models.profiles.values()
+                    if p.path
+                )
+            )
+            stem_info = f" · models: {stems}" if stems else ""
             ui.print(
                 f"[red]unknown model {name!r}[/red] [dim]— tiers: "
-                f"{', '.join(sorted(tiers))} · profiles: {profiles} · /model auto clears[/dim]"
+                f"{', '.join(sorted(tiers))} · profiles: {profiles}{stem_info} · "
+                f"/model auto clears[/dim]"
             )
             return
+        tier, profile_name, model_stem = target
         session.pinned_tier = tier
         session.tier = tier
+        ctx.state.tier = tier
+        ctx.state.model = model_stem
         ui.print(
-            f"[yellow]pinned[/yellow] [dim]{tier} → profile "
-            f"{ctx.config.routing.tiers.get(tier, tier)} (/model auto to clear)[/dim]"
+            f"[yellow]pinned[/yellow] [dim]{tier} → model {model_stem} "
+            f"(profile: {profile_name}) (/model auto to clear)[/dim]"
         )
 
     async def models(ui: Session, args: str) -> None:
@@ -165,7 +192,7 @@ def _builtins(ctx: CommandContext) -> list[tuple[str, CommandHandler, str]]:
         ui.print(f"[dim]resumed session {loaded.id} · {len(loaded.messages)} messages[/dim]")
 
     return [
-        ("model", model, "Show or pin the active model tier (/model auto|small|mid)"),
+        ("model", model, "Show or pin the active model (/model <name> or /model auto)"),
         ("models", models, "List configured model profiles"),
         ("plan", plan, "Show the current plan and step statuses"),
         ("stats", stats, "Session and turn statistics"),
@@ -175,13 +202,53 @@ def _builtins(ctx: CommandContext) -> list[tuple[str, CommandHandler, str]]:
     ]
 
 
-def _resolve_tier(config: Config, name: str) -> str | None:
-    """Accept a tier key, or a profile name that maps to exactly one tier."""
+def _resolve_target(config: Config, name: str) -> tuple[str, str, str] | None:
+    """Resolve a tier, profile, model stem, or unique substring to (tier, profile, stem)."""
+    q = name.strip()
+    if not q:
+        return None
     tiers = config.routing.tiers
-    if name in tiers:
-        return name
-    matches = [tier for tier, profile in tiers.items() if profile == name]
-    return matches[0] if len(matches) == 1 else None
+    profiles = config.models.profiles
+
+    # 1. Exact tier match
+    if q.lower() in tiers:
+        tier = q.lower()
+        prof = tiers[tier]
+        stem = resolve_model(config, tier)
+        return (tier, prof, stem)
+
+    # 2. Exact profile match
+    for prof_name, profile in profiles.items():
+        if q.lower() == prof_name.lower():
+            tier = next((t for t, p in tiers.items() if p == prof_name), prof_name)
+            stem = Path(profile.path).stem if profile.path else prof_name
+            return (tier, prof_name, stem)
+
+    # 3. Exact model stem match (with or without .gguf)
+    q_stem = q[:-5] if q.lower().endswith(".gguf") else q
+    for prof_name, profile in profiles.items():
+        stem = Path(profile.path).stem if profile.path else prof_name
+        if q_stem.lower() == stem.lower():
+            tier = next((t for t, p in tiers.items() if p == prof_name), prof_name)
+            return (tier, prof_name, stem)
+
+    # 4. Fuzzy/substring match across profile names and model stems
+    matches: list[tuple[str, str, str]] = []
+    for prof_name, profile in profiles.items():
+        stem = Path(profile.path).stem if profile.path else prof_name
+        tier = next((t for t, p in tiers.items() if p == prof_name), prof_name)
+        if q.lower() in prof_name.lower() or (profile.path and q.lower() in stem.lower()):
+            matches.append((tier, prof_name, stem))
+    if len(matches) == 1:
+        return matches[0]
+
+    return None
+
+
+def _resolve_tier(config: Config, name: str) -> str | None:
+    """Accept a tier key, profile name, or model stem, returning the tier name."""
+    target = _resolve_target(config, name)
+    return target[0] if target is not None else None
 
 
 def _register_plugins(ui: Session, registry: Registry) -> None:

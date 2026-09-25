@@ -92,3 +92,11 @@ def test_pinned_tier_is_marked_in_the_status_line() -> None:
     text = _text(build_status_line(_state(), _config(), pinned=True))
 
     assert "tier:mid (pinned)" in text
+
+
+def test_ctx_segment_resolves_direct_profile_name() -> None:
+    # state.tier set to profile name "coder" directly, rather than "mid"
+    parts = build_status_line(_state(tier="coder"), _config())
+    ctx_text = next(text for _style, text in parts if text.startswith("ctx:"))
+    assert "ctx:4.1k/32.8k" in ctx_text
+
