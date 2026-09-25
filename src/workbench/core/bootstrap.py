@@ -27,6 +27,7 @@ def build_registry(config: Config) -> Registry:
     """Build the process registry: plugins first, then core tools, sandbox, routers."""
     registry = Registry()
     registry.load_entry_points()
+    registry.load_directory(Path("~/.config/workbench/plugins").expanduser())
 
     registry.register("routers", "heuristic", HeuristicRouter())
     registry.register("routers", "laya", LayaRouter(HeuristicRouter(), config.routing))

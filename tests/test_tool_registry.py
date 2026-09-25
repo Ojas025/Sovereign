@@ -87,6 +87,23 @@ class TestBuildRegistry:
         with pytest.raises(RegistryError, match="read"):
             build_registry(config(tmp_path))
 
+    def test_loads_plugins_from_user_plugins_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        user_home = tmp_path / "user_home"
+        plugins_dir = user_home / ".config" / "workbench" / "plugins"
+        plugins_dir.mkdir(parents=True)
+        (plugins_dir / "custom.py").write_text(
+            "def register(registry):\n"
+            "    registry.register('tools', 'custom_tool', object())\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HOME", str(user_home))
+
+        registry = build_registry(config(tmp_path))
+
+        assert "custom_tool" in registry.entries("tools")
+
 
 class TestHeadlessConfirmation:
     async def test_declines_every_prompt(self) -> None:

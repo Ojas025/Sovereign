@@ -77,6 +77,23 @@ def test_scan_survives_a_corrupt_index(tmp_path: Path) -> None:
     assert entries[0].sha is None
 
 
+def test_scan_finds_nested_ggufs_left_by_repo_layout_downloads(tmp_path: Path) -> None:
+    # The hf provider preserves repo subpaths (stories260K.gguf lands in
+    # tinyllamas/); the scan must follow or those downloads stay invisible.
+    nested = tmp_path / "tinyllamas"
+    nested.mkdir()
+    model = nested / "stories260K.gguf"
+    model.write_bytes(b"abc")
+
+    entry = Store([str(tmp_path)]).register(model)
+
+    entries = Store([str(tmp_path)]).scan()
+
+    assert [item.name for item in entries] == ["stories260K"]
+    assert entries[0].path == model
+    assert entries[0].sha == entry.sha  # index beside the nested file is trusted
+
+
 def test_models_list_joins_profiles_tiers_and_store_entries(tmp_path: Path) -> None:
     store_dir = tmp_path / "store"
     store_dir.mkdir()
@@ -121,3 +138,26 @@ def test_models_list_without_profiles_keeps_the_configure_hint(tmp_path: Path) -
 
     assert result.returncode == 0
     assert "no model profiles configured" in result.stdout
+
+
+def test_models_list_without_profiles_still_shows_the_store(tmp_path: Path) -> None:
+    # VAL finding: the early return hid the store — a bare `models list` never
+    # showed what was on disk even with search paths configured.
+    store_dir = tmp_path / "store"
+    store_dir.mkdir()
+    (store_dir / "Orphan-Q8_0.gguf").write_bytes(b"12")
+    (tmp_path / ".workbench.toml").write_text(
+        f'[models]\nsearch_paths = ["{store_dir}"]\n', encoding="utf-8"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "workbench", "models", "list"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "no model profiles configured" in result.stdout
+    assert "Orphan-Q8_0.gguf" in result.stdout

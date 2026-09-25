@@ -116,29 +116,33 @@ def _show_config(config: Config, as_json: bool) -> None:
 
 
 def _list_models(config: Config) -> None:
-    """Join profiles against routing tiers and the local store (PLAN §6.1)."""
-    if not config.models.profiles:
-        print("no model profiles configured (add [models.profiles.<name>] to .workbench.toml)")
-        return
-    tiers_by_profile: dict[str, list[str]] = {}
-    for tier, profile_name in config.routing.tiers.items():
-        tiers_by_profile.setdefault(profile_name, []).append(tier)
+    """Join profiles against routing tiers and the local store (PLAN §6.1).
+
+    The store section always prints: with no profiles every entry is
+    unreferenced, so an early return would hide what's on disk (M8 VAL).
+    """
     entries = Store(config.models.search_paths).scan()
     by_path = {entry.path.resolve(): entry for entry in entries}
     referenced: set[Path] = set()
-    for name, profile in sorted(config.models.profiles.items()):
-        tiers = ",".join(sorted(tiers_by_profile.get(name, []))) or "-"
-        entry = by_path.get(Path(profile.path).expanduser().resolve()) if profile.path else None
-        if entry is None:
-            note = "not in store"
-        else:
-            referenced.add(entry.path.resolve())
-            quant = f" {entry.quant}" if entry.quant else ""
-            note = f"store {entry.family}{quant} {human_size(entry.size)}"
-        print(
-            f"{name}: {profile.path} (ctx {profile.ctx_len}, "
-            f"tool_calling {profile.tool_calling}, tier {tiers}, {note})"
-        )
+    if not config.models.profiles:
+        print("no model profiles configured (add [models.profiles.<name>] to .workbench.toml)")
+    else:
+        tiers_by_profile: dict[str, list[str]] = {}
+        for tier, profile_name in config.routing.tiers.items():
+            tiers_by_profile.setdefault(profile_name, []).append(tier)
+        for name, profile in sorted(config.models.profiles.items()):
+            tiers = ",".join(sorted(tiers_by_profile.get(name, []))) or "-"
+            entry = by_path.get(Path(profile.path).expanduser().resolve()) if profile.path else None
+            if entry is None:
+                note = "not in store"
+            else:
+                referenced.add(entry.path.resolve())
+                quant = f" {entry.quant}" if entry.quant else ""
+                note = f"store {entry.family}{quant} {human_size(entry.size)}"
+            print(
+                f"{name}: {profile.path} (ctx {profile.ctx_len}, "
+                f"tool_calling {profile.tool_calling}, tier {tiers}, {note})"
+            )
     for entry in entries:
         if entry.path.resolve() not in referenced:
             quant = f", {entry.quant}" if entry.quant else ""

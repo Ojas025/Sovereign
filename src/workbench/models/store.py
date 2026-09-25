@@ -73,16 +73,24 @@ class Store:
         self._paths = tuple(Path(raw).expanduser() for raw in search_paths)
 
     def scan(self) -> list[StoreEntry]:
-        """Every model found, name-sorted; cached shas trusted only while size matches."""
+        """Every model found, name-sorted; cached shas trusted only while size matches.
+
+        Recursive: the hf provider preserves repo subpaths, so downloads land
+        nested (e.g. store/tinyllamas/...) with their index beside them — a
+        top-level glob would leave them invisible.
+        """
         entries: dict[Path, StoreEntry] = {}
+        indexes: dict[Path, dict[str, dict[str, object]]] = {}
         for directory in self._paths:
             if not directory.is_dir():
                 continue
-            index = _read_index(directory)
-            for path in sorted(directory.glob("*.gguf")):
+            for path in sorted(directory.rglob("*.gguf")):
                 key = path.resolve()
                 if key in entries:
                     continue
+                if path.parent not in indexes:
+                    indexes[path.parent] = _read_index(path.parent)
+                index = indexes[path.parent]
                 entry = StoreEntry.for_path(path)
                 cached = index.get(path.name)
                 cached_sha = cached.get("sha") if cached is not None else None
