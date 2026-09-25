@@ -116,6 +116,30 @@ async def test_crash_triggers_automatic_restart() -> None:
         await manager.stop()
 
 
+async def test_server_started_payload_reports_readiness_and_restart_flag() -> None:
+    """M7.2: ready_s feeds server_ready_seconds, restart feeds server_restarts_total."""
+    bus = EventBus()
+    seen = collect_events(bus)
+    config = make_config()
+    manager = ServerManager(config, bus, command=fake_server_command(config.server.port))
+    try:
+        await manager.ensure_running()
+        first = [e for e in seen if e.kind == "server_started"][-1]
+        assert isinstance(first.data["ready_s"], float)
+        assert first.data["ready_s"] >= 0.0
+        assert first.data["restart"] is False  # a manual start is no crash-restart
+
+        manager.process.kill()
+        await wait_until(
+            lambda: manager.state == "ready"
+            and len([e for e in seen if e.kind == "server_started"]) == 2
+        )
+        second = [e for e in seen if e.kind == "server_started"][-1]
+        assert second.data["restart"] is True  # the child came back by itself
+    finally:
+        await manager.stop()
+
+
 async def test_crash_without_restart_budget_fails_and_reports_error() -> None:
     bus = EventBus()
     seen = collect_events(bus)

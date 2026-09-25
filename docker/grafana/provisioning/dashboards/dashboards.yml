@@ -1,0 +1,12 @@
+# Dashboards as JSON code (PLAN §8.4): files in docker/grafana/dashboards
+# appear in Grafana without any UI interaction.
+apiVersion: 1
+
+providers:
+  - name: workbench
+    folder: Workbench
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

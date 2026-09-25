@@ -31,6 +31,7 @@ from workbench.core.session import SessionStore
 from workbench.llm.client import LLMClientHttp
 from workbench.llm.server import ServerError, ServerManager
 from workbench.logging_setup import get_logger
+from workbench.observability import start_observability
 from workbench.routing.policy import TierPolicy
 from workbench.tui.bridge import PromptBridge, TurnWorker, tui_approver, tui_confirm
 from workbench.tui.commands import CommandContext, register_commands
@@ -68,6 +69,7 @@ async def _interactive(config: Config) -> int:
     router = resolve_router(registry, config)  # fail fast on a bad backend
     tools = build_tools(registry)
     session = SessionState.create(store=store, workspace=str(workspace))
+    observability = start_observability(config, bus)  # lives to the finally (M7.4)
     main_loop = asyncio.get_running_loop()
     main_task = asyncio.current_task()
     main_ident = threading.get_ident()
@@ -231,6 +233,7 @@ async def _interactive(config: Config) -> int:
             except asyncio.CancelledError:
                 pass
             await manager.stop(reason="tui exit")
+            observability.stop()  # after manager.stop so server_stopped is counted
             signal.signal(signal.SIGINT, previous_sigint)
     return 0
 

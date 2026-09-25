@@ -10,11 +10,15 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
 
 from fixtures.fake_llama_server import free_port
+from fixtures.metrics_text import PLAN_METRICS, has_metric
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
@@ -29,12 +33,24 @@ def _wrapper_script(
     responses: tuple[str, ...],
     tool_name: str,
     tool_arguments: str,
+    ignore_sigterm: bool = False,
 ) -> str:
-    """Self-contained fake-server launcher; never parses its argv."""
+    """Self-contained fake-server launcher; never parses its argv.
+
+    ``ignore_sigterm`` keeps the child alive through the manager's 10s
+    stop-grace, giving the metrics e2e test a wide, deterministic window to
+    scrape a run whose turn has already ended (M7.2).
+    """
+    signal_setup = (
+        "import signal\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        if ignore_sigterm
+        else ""
+    )
     return (
         f"#!{sys.executable}\n"
         "import sys\n"
         "import threading\n"
+        f"{signal_setup}"
         f"sys.path.insert(0, {str(FIXTURE_DIR)!r})\n"
         "from fake_llama_server import FakeBehavior, FakeLlamaServer\n"
         "behavior = FakeBehavior(\n"
@@ -55,6 +71,7 @@ def _prepare(
     tool_name: str = "write",
     tool_arguments: str = "{}",
     sandbox_mode: str | None = None,
+    ignore_sigterm: bool = False,
 ) -> tuple[Path, Path]:
     port = free_port()
     wrapper = tmp_path / "fake_wrapper.py"
@@ -64,6 +81,7 @@ def _prepare(
             responses=responses,
             tool_name=tool_name,
             tool_arguments=tool_arguments,
+            ignore_sigterm=ignore_sigterm,
         ),
         encoding="utf-8",
     )
@@ -149,6 +167,10 @@ def test_json_print_streams_the_full_plan_cycle(tmp_path: Path) -> None:
     tool_end = by_kind["tool_execution_end"]["data"]
     assert tool_end["tool"] == "write"
     assert tool_end["status"] == "ok"
+    # M7.2 payload additions ride along without disturbing existing consumers
+    assert by_kind["route_decided"]["data"]["duration_s"] >= 0.0
+    assert by_kind["message_end"]["data"]["duration_s"] >= 0.0
+    assert tool_end["blocked_reason"] is None  # a successful write is not a block
     assert by_kind["reflection"]["data"] == {"verdict": "done", "completed": [1, 2]}
     assert by_kind["turn_end"]["data"]["outcome"] == "completed"
     assert by_kind["agent_end"]["data"]["outcome"] == "completed"
@@ -188,3 +210,53 @@ def test_print_runs_bash_through_the_real_sandbox(tmp_path: Path) -> None:
     assert tool_end["data"]["status"] == "ok"
     turn_end = [event for event in events if event["kind"] == "turn_end"][0]
     assert turn_end["data"]["outcome"] == "completed"
+
+
+def test_print_run_exposes_the_full_metric_vocabulary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PLAN §9 gate: a scripted run serves every §8.3 name while it runs.
+
+    The scripted turn blocks a bash command (labelled tool_blocked_total only
+    appears once a policy denial samples it) and the fake server ignores
+    SIGTERM, so teardown spans the manager's 10s stop-grace — a wide, flakeless
+    scrape window that still ends with a clean exit code.
+    """
+    project, workspace = _prepare(
+        tmp_path,
+        (f"text:{_PLAN}", "tool_call", f"text:{_FINAL}", f"text:{_REFLECT}"),
+        tool_name="bash",
+        tool_arguments='{"command": "sudo reboot"}',  # guardrails deny -> blocked
+        ignore_sigterm=True,
+    )
+    port = free_port()
+    monkeypatch.setenv("WB_METRICS_PORT", str(port))
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "workbench",
+            "--workspace",
+            str(workspace),
+            "-p",
+            "Plan the steps to create a marker file",
+        ],
+        cwd=project,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    missing = list(PLAN_METRICS)
+    deadline = time.monotonic() + 45.0
+    while missing and process.poll() is None and time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics", timeout=1) as response:
+                body = response.read().decode()
+            missing = [name for name in PLAN_METRICS if not has_metric(body, name)]
+        except OSError:
+            pass  # interpreter still importing, or between bind and serve
+        if missing:
+            time.sleep(0.05)
+    _, stderr = process.communicate(timeout=60)
+    assert process.returncode == 0, stderr
+    assert missing == [], f"metrics never surfaced: {missing}"

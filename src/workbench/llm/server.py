@@ -150,6 +150,7 @@ class ServerManager:
         """Spawn the child and wait for readiness. Caller holds the lock."""
         self._stopping = False
         self._state = "starting"
+        spawn_started = monotonic()
         try:
             process = await asyncio.create_subprocess_exec(
                 *self._command,
@@ -184,7 +185,17 @@ class ServerManager:
         self._state = "ready"
         self._last_used = monotonic()
         self._bus.emit(
-            Event("server_started", {"port": self._config.server.port, "pid": process.pid})
+            Event(
+                "server_started",
+                {
+                    "port": self._config.server.port,
+                    "pid": process.pid,
+                    # M7.2: spawn-to-green feeds server_ready_seconds; restart
+                    # marks crash-restarts (a manual start resets _restarts).
+                    "ready_s": monotonic() - spawn_started,
+                    "restart": self._restarts > 0,
+                },
+            )
         )
         if self._idle_task is None or self._idle_task.done():
             self._idle_task = asyncio.create_task(self._idle_loop())

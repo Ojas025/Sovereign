@@ -1,0 +1,16 @@
+# Pre-wired scrape targets (PLAN §8.4): our localhost metrics port (M7.4 —
+# alive only while a workbench run is active, so this target flaps down
+# between runs by design) and llama-serve's own /metrics as the second target.
+# Loopback addresses because the stack runs in host network mode (M7.7).
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: workbench
+    static_configs:
+      - targets: ["127.0.0.1:9600"]
+
+  - job_name: llama-server
+    static_configs:
+      - targets: ["127.0.0.1:8080"]

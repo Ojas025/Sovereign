@@ -172,8 +172,13 @@ class AgentLoop:
         self._session.append_message(ChatMessage(role="user", content=user_message))
         classification: Classification | None = None
         try:
+            route_started = self._clock()
             classification = await self._router.classify(user_message)
-            decision = self._decide(classification, announce=True)
+            decision = self._decide(
+                classification,
+                announce=True,
+                route_duration_s=self._clock() - route_started,
+            )
             outcome: OutcomeKind
             text: str
             plan_hinted = (
@@ -244,7 +249,13 @@ class AgentLoop:
 
     # --- routing ------------------------------------------------------------
 
-    def _decide(self, classification: Classification, *, announce: bool) -> RouteDecision:
+    def _decide(
+        self,
+        classification: Classification,
+        *,
+        announce: bool,
+        route_duration_s: float = 0.0,
+    ) -> RouteDecision:
         session = self._session
         if session.pinned_tier is not None:
             # /model pin: the policy is advisory until the pin clears (M6.7)
@@ -289,6 +300,7 @@ class AgentLoop:
                         "backend": classification.backend,
                         "model": resolve_model(self._config, decision.tier),
                         "suggest_plan": decision.suggest_plan,
+                        "duration_s": route_duration_s,  # classify+decide (M7.2)
                     },
                 )
             )
@@ -464,6 +476,7 @@ class AgentLoop:
                         "status": "error" if tool_result.is_error else "ok",
                         "duration_s": self._clock() - started,
                         "output": _display_output(tool_result.content),
+                        "blocked_reason": tool_result.blocked_reason,  # M7.5
                     },
                 )
             )
@@ -515,6 +528,7 @@ class AgentLoop:
                             "status": "error",
                             "duration_s": 0.0,
                             "output": _display_output(reason),
+                            "blocked_reason": None,  # uniform key set (M7.2)
                         },
                     )
                 )
@@ -546,6 +560,7 @@ class AgentLoop:
                         "status": "error" if tool_result.is_error else "ok",
                         "duration_s": self._clock() - started,
                         "output": _display_output(tool_result.content),
+                        "blocked_reason": tool_result.blocked_reason,  # M7.5
                     },
                 )
             )
@@ -596,6 +611,7 @@ class AgentLoop:
         """Stream one model call: message events out, text/calls/usage accumulated."""
         self._rounds += 1
         self._bus.emit(Event("message_start", {"model": request.model, "role": "assistant"}))
+        stream_started = self._clock()
         text_parts: list[str] = []
         calls: dict[str, tuple[str, list[str]]] = {}
         usage: Usage | None = None
@@ -624,6 +640,7 @@ class AgentLoop:
                 {
                     "stop_reason": "tool_calls" if calls else stop_reason,
                     "ttft_s": ttft_s,
+                    "duration_s": self._clock() - stream_started,  # M7.2
                     "usage": None
                     if usage is None
                     else {

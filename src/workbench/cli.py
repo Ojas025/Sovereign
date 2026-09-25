@@ -28,6 +28,7 @@ from workbench.core.session import Session, SessionStore
 from workbench.llm.client import LLMClientHttp
 from workbench.llm.server import ServerError, ServerManager
 from workbench.logging_setup import configure_logging
+from workbench.observability import start_observability
 from workbench.routing.policy import TierPolicy
 from workbench.tools import headless_confirm
 
@@ -75,6 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
         "obs", help="local observability stack (Prometheus + Grafana)"
     )
     obs_sub = obs_parser.add_subparsers(dest="obs_command")
+    obs_sub.required = True  # a bare `obs` is a usage error, never a half-start (M7.6)
     obs_sub.add_parser("up", help="start Prometheus and Grafana")
     obs_sub.add_parser("down", help="stop Prometheus and Grafana")
 
@@ -137,10 +139,21 @@ def _print_event(event: Event) -> None:
 
 
 async def _print_session(config: Config, prompt: str, *, json_stream: bool) -> int:
-    """Wire registry/router/policy/loop/server, run one turn, tear the server down."""
+    """Own the run's observability stack: metrics live exactly as long as -p (M7.4)."""
     bus = EventBus()
     if json_stream:
         bus.subscribe(None, _print_event)
+    observability = start_observability(config, bus)
+    try:
+        return await _run_session(config, bus, prompt, json_stream=json_stream)
+    finally:
+        observability.stop()
+
+
+async def _run_session(
+    config: Config, bus: EventBus, prompt: str, *, json_stream: bool
+) -> int:
+    """Wire registry/router/policy/loop/server, run one turn, tear the server down."""
     registry = build_registry(config)
     workspace = Path(config.runtime.workspace_root).expanduser()
     session = Session.create(
@@ -230,11 +243,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             _list_models(config)
             return 0
     if args.command == "obs":
-        print(
-            f"workbench obs {args.obs_command}: not available yet (see PLAN.md, milestone 7)",
-            file=sys.stderr,
-        )
-        return 1
+        from workbench.observability.stack import ObsError, run_stack
+
+        try:
+            return run_stack(args.obs_command)
+        except ObsError as error:
+            print(f"workbench: {error}", file=sys.stderr)
+            return 1
 
     parser.print_help()
     return 0

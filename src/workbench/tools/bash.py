@@ -80,13 +80,17 @@ class BashTool:
         )
         if decision.verdict == "deny":
             return ToolResult(
-                f"blocked: command rejected by guardrails ({decision.reason})", is_error=True
+                f"blocked: command rejected by guardrails ({decision.reason})",
+                is_error=True,
+                blocked_reason=decision.reason,
             )
         if decision.verdict == "confirm":
             prompt = f"Run command? [{decision.reason}] {command}"
             if not await context.confirm(prompt):
                 return ToolResult(
-                    f"blocked: confirmation declined ({decision.reason})", is_error=True
+                    f"blocked: confirmation declined ({decision.reason})",
+                    is_error=True,
+                    blocked_reason=decision.reason,
                 )
 
         cap = self._config.bash_timeout_s

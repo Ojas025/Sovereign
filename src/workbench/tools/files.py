@@ -9,6 +9,10 @@ from workbench.config import ToolsConfig
 from workbench.core.protocols import ToolContext, ToolResult
 from workbench.tools.jail import PathJail, PathJailError
 
+# Stable reason token for tool_blocked_total (M7.5): every PathJail rejection
+# is a policy denial, whatever the underlying message says.
+_PATH_JAIL = "path_jail"
+
 
 class _BadArgument(Exception):
     """A model-supplied argument failed structural validation."""
@@ -70,7 +74,7 @@ class ReadTool:
         except _BadArgument as exc:
             return ToolResult(str(exc), is_error=True)
         except PathJailError as exc:
-            return ToolResult(f"blocked: {exc}", is_error=True)
+            return ToolResult(f"blocked: {exc}", is_error=True, blocked_reason=_PATH_JAIL)
 
         if not path.exists():
             return ToolResult(f"file not found: {raw_path}", is_error=True)
@@ -127,7 +131,7 @@ class WriteTool:
         except _BadArgument as exc:
             return ToolResult(str(exc), is_error=True)
         except PathJailError as exc:
-            return ToolResult(f"blocked: {exc}", is_error=True)
+            return ToolResult(f"blocked: {exc}", is_error=True, blocked_reason=_PATH_JAIL)
 
         encoded = content.encode("utf-8")
         if len(encoded) > self._tools.write_max_bytes:
@@ -179,7 +183,7 @@ class EditTool:
         except _BadArgument as exc:
             return ToolResult(str(exc), is_error=True)
         except PathJailError as exc:
-            return ToolResult(f"blocked: {exc}", is_error=True)
+            return ToolResult(f"blocked: {exc}", is_error=True, blocked_reason=_PATH_JAIL)
 
         if not path.exists():
             return ToolResult(f"file not found: {raw_path}", is_error=True)

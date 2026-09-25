@@ -141,6 +141,9 @@ class ToolContext:
 class ToolResult:
     content: str
     is_error: bool = False
+    # Set only at policy denials with a stable M4 reason token (M7.5); runtime
+    # failures leave it None so tool_blocked_total counts blocks, not errors.
+    blocked_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

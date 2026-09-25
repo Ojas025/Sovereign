@@ -1,0 +1,34 @@
+# Local observability stack (PLAN §8.4). Run via `workbench obs up` / `obs down`.
+#
+# network_mode: host (ruling M7.7, found in VAL): the workbench metrics port
+# binds 127.0.0.1 only (M7.4 — PLAN §1 keeps our HTTP surface localhost-only),
+# which bridge-networked containers cannot reach through the host-gateway alias.
+# Host networking keeps that security property intact while Prometheus scrapes
+# 127.0.0.1:9600 (ours) and 127.0.0.1:8080 (llama-serve) directly. Linux-first,
+# which is where this stack runs.
+name: workbench-obs
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.2
+    network_mode: host
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    network_mode: host
+    environment:
+      # Local-only defaults; anonymous viewers can open the provisioned boards.
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
