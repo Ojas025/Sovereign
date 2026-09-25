@@ -124,6 +124,9 @@ class Classification:
     confidence: float
     needs_tools: bool
     backend: str
+    has_pii: bool = False
+    redacted_prompt: str | None = None
+    pii_counts: Mapping[str, int] = field(default_factory=dict)
 
 
 # --- tools & sandbox ----------------------------------------------------

@@ -96,7 +96,6 @@ def test_builtins_register_with_help_text(tmp_path: Path) -> None:
         "router",
         "sessions",
         "resume",
-        "redact",
         "review",
         "knowledge",
         "sovereignty",

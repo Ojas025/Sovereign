@@ -40,4 +40,5 @@ def render_plan(plan: Plan) -> Panel:
 def reflection_footer(verdict: str, completed: Sequence[int]) -> Text:
     """Dim one-liner under the re-rendered plan: what the self-check concluded."""
     steps = ",".join(str(index) for index in completed) or "—"
-    return Text(f"↳ {verdict.upper()} · completed {steps}", style="dim italic")
+    verdict_str = "WAITING FOR USER" if verdict.lower() == "wait_user" else verdict.upper()
+    return Text(f"↳ {verdict_str} · completed {steps}", style="dim italic")

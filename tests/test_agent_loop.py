@@ -146,7 +146,9 @@ def build(
     context = ToolContext(workspace_root=tmp_path / "ws", confirm=_approve_all)
     loop = AgentLoop(
         client=ScriptedClient(scripts),
-        router=FakeRouter(overrides.pop("classification", DEFAULT_CLASSIFICATION)),  # type: ignore[arg-type]
+        router=overrides.pop(
+            "router", FakeRouter(overrides.pop("classification", DEFAULT_CLASSIFICATION))
+        ),  # type: ignore[arg-type]
         policy=TierPolicy(config.routing),
         tools=overrides.pop("tools", {"echo": FakeTool()}),  # type: ignore[arg-type]
         session=session,
@@ -843,3 +845,83 @@ async def test_pinned_tier_bypasses_policy_and_reports_pinned(tmp_path: Path) ->
     assert decided.data["tier"] == "mid"
     assert decided.data["reason"] == "pinned"
     assert rig.session.tier == "mid"
+
+
+async def test_plan_asking_user_yields_turn(tmp_path: Path) -> None:
+    question = "Please specify the specific functionality or deployment you need."
+    rig = build(
+        tmp_path,
+        [
+            text_events(question),
+            text_events("completed: 1\nverdict: CONTINUE"),
+        ],
+    )
+    await _set_plan(rig, "step 1", "step 2")
+
+    outcome = await rig.loop.run_turn("start k8s setup")
+
+    assert outcome.outcome == "completed"
+    assert outcome.text == question
+    nudges = [m for m in rig.session.messages if m.role == "user" and "Continue" in m.content]
+    assert len(nudges) == 0
+
+
+async def test_plan_wait_user_verdict_yields_turn(tmp_path: Path) -> None:
+    rig = build(
+        tmp_path,
+        [
+            text_events("Waiting for clarification on cluster credentials."),
+            text_events("completed: 1\nverdict: WAIT_USER needing credentials"),
+        ],
+    )
+    await _set_plan(rig, "step 1", "step 2")
+
+    outcome = await rig.loop.run_turn("run deployment")
+
+    assert outcome.outcome == "completed"
+    assert "Waiting for clarification" in outcome.text
+    reflections = rig.recorder.of("reflection")
+    assert reflections[0].data["verdict"] == "wait_user"
+    nudges = [m for m in rig.session.messages if m.role == "user" and "Continue" in m.content]
+    assert len(nudges) == 0
+
+
+async def test_reflection_tokens_do_not_leak_to_transcript_stream(tmp_path: Path) -> None:
+    rig = build(
+        tmp_path,
+        [
+            text_events("Finished step one."),
+            text_events("completed: 1, 2\nverdict: DONE"),
+        ],
+    )
+    await _set_plan(rig, "step 1", "step 2")
+
+    await rig.loop.run_turn("proceed")
+
+    message_updates = rig.recorder.of("message_update")
+    for ev in message_updates:
+        assert "verdict:" not in ev.data.get("text", "")
+        assert "completed:" not in ev.data.get("text", "")
+
+
+async def test_user_prompt_with_pii_is_redacted_and_emits_event(tmp_path: Path) -> None:
+    from workbench.routing.heuristic import HeuristicRouter
+
+    rig = build(
+        tmp_path,
+        [text_events("Acknowledged.")],
+        router=HeuristicRouter(),
+    )
+
+    await rig.loop.run_turn("My email is secret@example.com and phone is +1-555-123-4567")
+
+    pii_events = rig.recorder.of("pii_redacted")
+    assert len(pii_events) == 1
+    assert pii_events[0].data["counts"]["email"] == 1
+    assert pii_events[0].data["counts"]["phone"] == 1
+    user_msg = rig.session.messages[0]
+    assert user_msg.role == "user"
+    assert "secret@example.com" not in user_msg.content
+    assert "[EMAIL]" in user_msg.content
+    assert "[PHONE]" in user_msg.content
+

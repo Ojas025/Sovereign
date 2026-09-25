@@ -60,3 +60,12 @@ def test_reflection_footer_without_completed_steps_reads_done() -> None:
 
     assert isinstance(footer, Text)
     assert "CONTINUE" in footer.plain
+
+
+def test_reflection_footer_wait_user() -> None:
+    footer = reflection_footer("wait_user", (1,))
+
+    assert isinstance(footer, Text)
+    assert "WAITING FOR USER" in footer.plain
+    assert "1" in footer.plain
+

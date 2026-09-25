@@ -47,4 +47,12 @@ WORKBENCH_QUESTIONS: dict[str, dict[str, object]] = {
             "or running shell commands?"
         ),
     },
+    "has_pii": {
+        "type": "noul",
+        "instructions": (
+            "Does `request` contain personally identifiable information (PII) such as "
+            "email addresses, phone numbers, IP addresses, government IDs, "
+            "or personal contact details?"
+        ),
+    },
 }

@@ -84,9 +84,42 @@ class TurnOutcome:
 
 @dataclass(frozen=True, slots=True)
 class Reflection:
-    kind: Literal["done", "continue", "revise"]
+    kind: Literal["done", "continue", "wait_user", "revise"]
     completed: tuple[int, ...]
     reason: str
+
+
+_QUESTION_PATTERNS = re.compile(
+    r"\b(?:"
+    r"please (?:specify|provide|clarify|choose|select|confirm|let me know|tell me|state)"
+    r"|could you (?:please )?(?:provide|specify|clarify|tell|share|give)"
+    r"|can you (?:please )?(?:provide|specify|clarify|tell|share|give)"
+    r"|would you like"
+    r"|what (?:kind|type|specific|details|functionality|deployment"
+    r"|approach|database|framework|service)"
+    r"|which (?:of the following|one|option|deployment|approach|would you)"
+    r"|let me know (?:if|what|how|which)"
+    r"|the more details you provide"
+    r"|waiting for your (?:input|response|reply|feedback|choice)"
+    r")\b|"
+    r"for example:\s*[\n\r]+(?:\s*[•\-*]|\s*\d+\.)",
+    re.IGNORECASE,
+)
+
+
+def _is_asking_user(text: str) -> bool:
+    """True when the assistant's text is requesting input/clarification from the user."""
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if stripped.endswith("?"):
+        return True
+    last_paragraph = stripped.split("\n\n")[-1].strip()
+    if "?" in last_paragraph:
+        return True
+    return bool(_QUESTION_PATTERNS.search(stripped))
+
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,12 +201,26 @@ class AgentLoop:
         self._rounds = 0
         self._tokens = 0
         self._started = self._clock()
-        self._bus.emit(Event("turn_start", {"turn_id": turn_id, "message": user_message}))
-        self._session.append_message(ChatMessage(role="user", content=user_message))
         classification: Classification | None = None
         try:
             route_started = self._clock()
             classification = await self._router.classify(user_message)
+            if classification.has_pii and classification.pii_counts:
+                self._bus.emit(
+                    Event(
+                        "pii_redacted",
+                        {
+                            "counts": dict(classification.pii_counts),
+                            "original": user_message,
+                            "redacted": classification.redacted_prompt or user_message,
+                        },
+                    )
+                )
+                if classification.redacted_prompt:
+                    user_message = classification.redacted_prompt
+
+            self._bus.emit(Event("turn_start", {"turn_id": turn_id, "message": user_message}))
+            self._session.append_message(ChatMessage(role="user", content=user_message))
             decision = self._decide(
                 classification,
                 announce=True,
@@ -332,7 +379,7 @@ class AgentLoop:
                 ),
                 protocol="none",
             )
-            result = await self._ask(request)
+            result = await self._ask(request, stream=False)
             self._check_tokens()
             try:
                 plan = parse_plan(result.text)
@@ -399,9 +446,19 @@ class AgentLoop:
             plan = self._session.plan
             if plan is None:
                 return "completed", result.text
+
+            # If assistant is asking questions or presenting choices, yield immediately
+            if _is_asking_user(result.text):
+                await self._reflect(plan, classification)
+                return "completed", result.text
+
             reflection = await self._reflect(plan, classification)
             if reflection.kind == "done" and plan.all_done():
                 return "completed", result.text
+
+            if reflection.kind == "wait_user":
+                return "completed", result.text
+
             if nudges >= self._config.agent.reflection_nudge_cap:
                 raise _Budget("reflection")
             nudges += 1
@@ -425,7 +482,7 @@ class AgentLoop:
             ),
             protocol="none",
         )
-        result = await self._ask(request)
+        result = await self._ask(request, stream=False)
         reflection = _parse_reflection(result.text)
         completed = set(reflection.completed)
         for step in plan.steps:
@@ -607,7 +664,7 @@ class AgentLoop:
             tools=specs,
         )
 
-    async def _ask(self, request: ChatRequest) -> _Round:
+    async def _ask(self, request: ChatRequest, *, stream: bool = True) -> _Round:
         """Stream one model call: message events out, text/calls/usage accumulated."""
         self._rounds += 1
         self._bus.emit(Event("message_start", {"model": request.model, "role": "assistant"}))
@@ -620,7 +677,8 @@ class AgentLoop:
         async for event in self._client.stream(request):
             if isinstance(event, TextDelta):
                 text_parts.append(event.text)
-                self._bus.emit(Event("message_update", {"text": event.text}))
+                if stream:
+                    self._bus.emit(Event("message_update", {"text": event.text}))
             elif isinstance(event, ToolCallStart):
                 calls[event.call_id] = (event.name, [])
             elif isinstance(event, ToolCallDelta):
@@ -690,7 +748,7 @@ class AgentLoop:
 
 def _parse_reflection(text: str) -> Reflection:
     """Two-line verdict; anything unparseable reads as CONTINUE (nudge-capped)."""
-    kind: Literal["done", "continue", "revise"] = "continue"
+    kind: Literal["done", "continue", "wait_user", "revise"] = "continue"
     reason = ""
     completed: tuple[int, ...] = ()
     for line in text.splitlines():
@@ -705,6 +763,10 @@ def _parse_reflection(text: str) -> Reflection:
             upper = body.upper()
             if upper.startswith("DONE"):
                 kind = "done"
+            elif upper.startswith(("WAIT_USER", "WAIT", "PAUSE")):
+                kind = "wait_user"
+                parts = body.split(maxsplit=1)
+                reason = parts[1].strip() if len(parts) > 1 else ""
             elif upper.startswith("REVISE"):
                 kind = "revise"
                 reason = body[len("REVISE") :].strip()

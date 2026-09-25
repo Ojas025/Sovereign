@@ -31,6 +31,7 @@ EventKind = Literal[
     "plan_rejected",
     "reflection",
     "budget_exceeded",
+    "pii_redacted",
     "server_started",
     "server_stopped",
     "error",

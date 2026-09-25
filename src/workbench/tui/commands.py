@@ -21,7 +21,6 @@ from workbench.config import Config
 from workbench.core.registry import Registry
 from workbench.core.session import Plan, SessionStore
 from workbench.core.session import Session as SessionState
-from workbench.governance.pii import redact_pii
 from workbench.governance.review import ReviewStore
 from workbench.knowledge.local import LocalKnowledgeStore
 from workbench.sovereignty.status import check_status
@@ -166,15 +165,6 @@ def _builtins(ctx: CommandContext) -> list[tuple[str, CommandHandler, str]]:
             f"model: {state.model or '-'} · suggest_plan: {state.suggest_plan}[/dim]"
         )
 
-    async def redact(ui: Session, args: str) -> None:
-        text = args.strip()
-        if not text:
-            ui.print("[dim]usage: /redact <text>[/dim]")
-            return
-        result = redact_pii(text)
-        ui.print(f"[green]{result.text}[/green]")
-        ui.print(f"[dim]redacted: {result.counts or 'none'}[/dim]")
-
     async def review(ui: Session, args: str) -> None:
         store = ReviewStore(Path(ctx.config.agent.session_dir).expanduser() / "reviews.jsonl")
         parts = args.strip().split(maxsplit=2)
@@ -283,7 +273,6 @@ def _builtins(ctx: CommandContext) -> list[tuple[str, CommandHandler, str]]:
         ("router", router, "Explain the last routing decision"),
         ("sessions", sessions, "List saved sessions"),
         ("resume", resume, "Resume a saved session (/resume [id])"),
-        ("redact", redact, "Redact common PII from supplied text"),
         ("review", review, "Queue or decide human-review items"),
         ("knowledge", knowledge, "Manage local knowledge files and search"),
         ("sovereignty", sovereignty, "Show local/offline runtime policy status"),

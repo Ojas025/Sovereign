@@ -41,14 +41,17 @@ def approved_plan_message(plan: Plan) -> str:
 
 
 def reflect_prompt(plan: Plan) -> str:
-    """Bounded self-check at plan boundaries; verdict line drives done/nudge/revise."""
+    """Bounded self-check at plan boundaries; verdict line drives done/nudge/wait/revise."""
     steps = "\n".join(f"{step.index}. [{step.status}] {step.text}" for step in plan.steps)
     return (
         f"Compare your progress against this plan:\n{steps}\n\n"
         "Reply with exactly two lines:\n"
         "completed: <comma-separated numbers of fully finished steps>\n"
-        "verdict: DONE | CONTINUE | REVISE <short reason>\n"
-        "Use DONE only when every plan step is finished and the request is satisfied."
+        "verdict: DONE | CONTINUE | WAIT_USER | REVISE <short reason>\n"
+        "Use DONE only when every plan step is finished and the request is satisfied.\n"
+        "Use WAIT_USER if you asked the user a question, presented options, "
+        "or need user clarification to proceed.\n"
+        "Use CONTINUE only if you can proceed autonomously with tools without user input."
     )
 
 

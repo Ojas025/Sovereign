@@ -49,3 +49,17 @@ def test_sovereignty_status(monkeypatch) -> None:
     monkeypatch.delenv("ALL_PROXY", raising=False)
     status = check_status(model_host="127.0.0.1")
     assert status.status == "PASS"
+
+
+async def test_heuristic_router_pii_classification() -> None:
+    from workbench.routing.heuristic import HeuristicRouter
+
+    router = HeuristicRouter()
+    res = await router.classify("Contact me at user@domain.com or 9876543210")
+    assert res.has_pii is True
+    assert res.redacted_prompt is not None
+    assert "user@domain.com" not in res.redacted_prompt
+    assert "[EMAIL]" in res.redacted_prompt
+    assert res.pii_counts["email"] == 1
+    assert res.pii_counts["phone"] == 1
+

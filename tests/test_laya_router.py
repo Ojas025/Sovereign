@@ -16,6 +16,7 @@ def answers(
     needs_tools_p: float = 0.9,
     intent_conf: float = 0.9,
     difficulty_conf: float = 0.9,
+    has_pii_p: float = 0.0,
 ) -> dict:
     """Canned predict() answers mirroring laya's real response shape."""
     return {
@@ -36,6 +37,12 @@ def answers(
         "needs_tools": {
             "type": "noul",
             "noul": needs_tools_p,
+            "confidence": 0.95,
+            "answer_confidence": 0.95,
+        },
+        "has_pii": {
+            "type": "noul",
+            "noul": has_pii_p,
             "confidence": 0.95,
             "answer_confidence": 0.95,
         },
@@ -198,11 +205,12 @@ async def test_needs_tools_follows_noul_probability() -> None:
 
 
 def test_workbench_questions_shape() -> None:
-    assert set(WORKBENCH_QUESTIONS) == {"intent", "difficulty", "needs_tools"}
+    assert set(WORKBENCH_QUESTIONS) == {"intent", "difficulty", "needs_tools", "has_pii"}
     assert {name: q["type"] for name, q in WORKBENCH_QUESTIONS.items()} == {
         "intent": "choice",
         "difficulty": "score",
         "needs_tools": "noul",
+        "has_pii": "noul",
     }
     assert set(INTENT_CRITERIA) == {
         "chat_qa",
@@ -214,6 +222,17 @@ def test_workbench_questions_shape() -> None:
         "meta",
     }
     assert len(WORKBENCH_QUESTIONS["difficulty"]["criteria"]) == 4  # ordinal 0-3
+
+
+async def test_has_pii_triggers_redaction() -> None:
+    agent = FakeAgent(payload={"answers": answers(has_pii_p=0.9)})
+    router, _ = router_with(agent)
+    result = await router.classify("Contact me at user@example.com")
+    assert result.has_pii is True
+    assert result.redacted_prompt is not None
+    assert "user@example.com" not in result.redacted_prompt
+    assert "[EMAIL]" in result.redacted_prompt
+    assert result.pii_counts.get("email") == 1
 
 
 def test_load_checkpoint_filters_temperature_warning(monkeypatch: pytest.MonkeyPatch) -> None:

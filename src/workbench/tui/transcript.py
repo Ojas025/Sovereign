@@ -93,6 +93,15 @@ class TranscriptController:
                 f"[red]error ({escape(str(data.get('stage')))}): "
                 f"{escape(str(data.get('message')))}[/red]"
             )
+        elif kind == "pii_redacted":
+            counts = data.get("counts", {})
+            counts_map = counts if isinstance(counts, Mapping) else {}
+            counts_str = ", ".join(f"{k}: {v}" for k, v in sorted(counts_map.items()))
+            sanitized = escape(str(data.get("redacted", "")))
+            self._ui.print(
+                f"[bold yellow]🛡 PII redacted from prompt[/bold yellow] [dim]({counts_str})[/dim]\n"
+                f"[dim]Sanitized prompt: {sanitized}[/dim]"
+            )
         elif kind == "turn_end":
             await self._close()
 

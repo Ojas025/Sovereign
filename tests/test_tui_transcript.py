@@ -531,3 +531,25 @@ async def test_thinking_indicator_appears_at_start_and_clears_on_update() -> Non
 
     # turn_end
     await controller.handle(Event("turn_end", {"outcome": "completed"}))
+
+
+async def test_pii_redacted_event_renders_notice() -> None:
+    ui = FakeUI()
+    controller = TranscriptController(ui, TuiState())
+
+    await controller.handle(
+        Event(
+            "pii_redacted",
+            {
+                "original": "email secret@example.com",
+                "redacted": "email [EMAIL]",
+                "counts": {"email": 1},
+            },
+        )
+    )
+
+    output = printed_text(ui)
+    assert "PII redacted from prompt" in output
+    assert "email: 1" in output
+    assert "Sanitized prompt: email [EMAIL]" in output
+

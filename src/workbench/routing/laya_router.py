@@ -15,6 +15,7 @@ from typing import Any
 
 from workbench.config import RoutingConfig
 from workbench.core.protocols import Classification, Router
+from workbench.governance.pii import redact_pii
 from workbench.logging_setup import get_logger
 from workbench.models.offline import ensure_offline
 from workbench.routing.questions import INTENT_CRITERIA, WORKBENCH_QUESTIONS
@@ -101,6 +102,14 @@ class LayaRouter:
             intent_conf = float(answers["intent"]["answer_confidence"])
             tools_conf = float(answers["needs_tools"]["answer_confidence"])
             confidence = min(intent_conf, diff_conf, tools_conf)
+
+            has_pii_entry = answers.get("has_pii")
+            has_pii_val = 0.0
+            if isinstance(has_pii_entry, dict) and "noul" in has_pii_entry:
+                try:
+                    has_pii_val = float(has_pii_entry["noul"])
+                except (ValueError, TypeError):
+                    has_pii_val = 0.0
         except Exception as exc:
             logger.warning("laya inference failed, using heuristic: %s", exc)
             return await self._fallback.classify(message)
@@ -113,12 +122,20 @@ class LayaRouter:
             )
             return await self._fallback.classify(message)
 
+        redaction = redact_pii(message)
+        has_pii = bool(redaction.counts) or has_pii_val >= 0.5
+        redacted_prompt = redaction.text if redaction.counts else None
+        pii_counts = redaction.counts
+
         return Classification(
             intent=intent,
             difficulty=difficulty,
             confidence=confidence,
             needs_tools=needs_tools,
             backend="laya",
+            has_pii=has_pii,
+            redacted_prompt=redacted_prompt,
+            pii_counts=pii_counts,
         )
 
     def _ensure_agent(self) -> Any | None:

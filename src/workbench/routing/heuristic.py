@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 
 from workbench.core.protocols import Classification
+from workbench.governance.pii import redact_pii
 
 # First match wins; anything unmatched is plain conversation (chat_qa).
 _INTENT_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -139,10 +140,14 @@ class HeuristicRouter:
             confidence = _CONFIDENCE_PLAIN if words >= _VAGUE_WORDS else _CONFIDENCE_VAGUE
 
         needs_tools = intent in _TOOL_INTENTS or bool(_PATH_REFERENCE.search(message))
+        redaction = redact_pii(message)
         return Classification(
             intent=intent,
             difficulty=_difficulty(message),
             confidence=confidence,
             needs_tools=needs_tools,
             backend="heuristic",
+            has_pii=bool(redaction.counts),
+            redacted_prompt=redaction.text if redaction.counts else None,
+            pii_counts=redaction.counts,
         )
