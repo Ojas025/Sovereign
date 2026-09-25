@@ -104,12 +104,31 @@ class AgentConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class ToolsConfig:
+    """Caps for the file tools (plan §5.2) plus declared extra read roots (§5.3.1)."""
+
+    read_max_bytes: int = 65_536  # one read/edit call never loads more than this
+    write_max_bytes: int = 1_048_576  # a single write stays well below context size
+    read_roots: tuple[str, ...] = ()  # extra roots readable from outside the workspace
+
+
+_SANDBOX_MODES = ("confirm", "auto", "strict")
+
+
+@dataclass(frozen=True, slots=True)
 class SandboxConfig:
     backend: str = "bwrap"
     bash_timeout_s: float = 60.0
     output_max_bytes: int = 20000
     mode: str = "confirm"
     allowlist: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        # a typo'd mode would silently change the confirmation contract — reject at load
+        if self.mode not in _SANDBOX_MODES:
+            raise ConfigError(
+                f"sandbox.mode: unknown mode {self.mode!r} (known: {', '.join(_SANDBOX_MODES)})"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +145,7 @@ class Config:
     models: ModelsConfig = field(default_factory=ModelsConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
+    tools: ToolsConfig = field(default_factory=ToolsConfig)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
 

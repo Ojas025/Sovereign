@@ -155,6 +155,38 @@ class TestValidation:
         with pytest.raises(ConfigError, match="intent_overrides.meta"):
             load_config(home=tmp_path / "home", project_dir=project)
 
+    def test_unknown_sandbox_mode_raises(self, tmp_path: Path) -> None:
+        project = tmp_path / "project"
+        write_toml(project / ".workbench.toml", "[sandbox]\nmode = 'bogus'\n")
+
+        with pytest.raises(ConfigError, match="sandbox.mode"):
+            load_config(home=tmp_path / "home", project_dir=project)
+
+
+class TestToolsSection:
+    def test_tools_defaults(self, tmp_path: Path) -> None:
+        config = load_config(home=tmp_path / "home", project_dir=tmp_path / "project")
+
+        assert config.tools.read_max_bytes == 65_536
+        assert config.tools.write_max_bytes == 1_048_576
+        assert config.tools.read_roots == ()
+        assert config.sandbox.mode == "confirm"
+
+    def test_tools_section_parses_from_toml(self, tmp_path: Path) -> None:
+        project = tmp_path / "project"
+        write_toml(
+            project / ".workbench.toml",
+            "[tools]\nread_max_bytes = 1024\nread_roots = ['~/shared']\n"
+            "[sandbox]\nmode = 'strict'\nallowlist = ['git', 'make']\n",
+        )
+
+        config = load_config(home=tmp_path / "home", project_dir=project)
+
+        assert config.tools.read_max_bytes == 1024
+        assert config.tools.read_roots == ("~/shared",)
+        assert config.sandbox.mode == "strict"
+        assert config.sandbox.allowlist == ("git", "make")
+
 
 def test_loaded_config_is_frozen(tmp_path: Path) -> None:
     config = load_config(home=tmp_path / "home", project_dir=tmp_path / "project")
