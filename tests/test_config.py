@@ -111,6 +111,20 @@ class TestTypedSections:
         assert config.server.idle_timeout_s == 45.5
         assert config.runtime.verbose is True
 
+    def test_intent_overrides_parse_from_toml(self, tmp_path: Path) -> None:
+        project = tmp_path / "project"
+        write_toml(
+            project / ".workbench.toml",
+            '[routing.intent_overrides]\nmeta = "small"\nshell_task = "mid"\n',
+        )
+
+        config = load_config(home=tmp_path / "home", project_dir=project)
+
+        assert config.routing.intent_overrides == {
+            "meta": "small",
+            "shell_task": "mid",
+        }
+
 
 class TestValidation:
     def test_unknown_key_raises_config_error(self, tmp_path: Path) -> None:
@@ -132,6 +146,13 @@ class TestValidation:
         write_toml(project / ".workbench.toml", "not [ valid toml")
 
         with pytest.raises(ConfigError, match=".workbench.toml"):
+            load_config(home=tmp_path / "home", project_dir=project)
+
+    def test_intent_override_naming_unknown_tier_raises(self, tmp_path: Path) -> None:
+        project = tmp_path / "project"
+        write_toml(project / ".workbench.toml", '[routing.intent_overrides]\nmeta = "huge"\n')
+
+        with pytest.raises(ConfigError, match="intent_overrides.meta"):
             load_config(home=tmp_path / "home", project_dir=project)
 
 

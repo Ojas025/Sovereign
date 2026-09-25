@@ -57,6 +57,16 @@ class RoutingConfig:
     checkpoint: str = "laya"
     tiers: dict[str, str] = field(default_factory=lambda: {"small": "small", "mid": "mid"})
     policy: TierPolicyConfig = field(default_factory=TierPolicyConfig)
+    intent_overrides: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # a typo'd tier name would silently never fire — reject it at load time
+        for intent, tier in self.intent_overrides.items():
+            if tier not in self.tiers:
+                raise ConfigError(
+                    f"routing.intent_overrides.{intent}: unknown tier {tier!r} "
+                    f"(known tiers: {', '.join(self.tiers)})"
+                )
 
 
 @dataclass(frozen=True, slots=True)
