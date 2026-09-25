@@ -61,6 +61,16 @@ _REASON_REVISION_FEEDBACK = (
     "Your previous reply was not a JSON object with a \"steps\" list."
 )
 _REASON_NO_FEEDBACK = "Make the steps more concrete and actionable."
+# Events are the TUI's display channel (and NDJSON's): cap a tool result so a
+# 64KB file read never floods the stream — full content lives in the session JSONL.
+_TOOL_OUTPUT_EVENT_CHARS = 4000
+
+
+def _display_output(content: str) -> str:
+    """Size-cap a tool result for the ``tool_execution_end`` event payload."""
+    if len(content) <= _TOOL_OUTPUT_EVENT_CHARS:
+        return content
+    return content[:_TOOL_OUTPUT_EVENT_CHARS] + "…"
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,6 +246,9 @@ class AgentLoop:
 
     def _decide(self, classification: Classification, *, announce: bool) -> RouteDecision:
         session = self._session
+        if session.pinned_tier is not None:
+            # /model pin: the policy is advisory until the pin clears (M6.7)
+            session.tier = session.pinned_tier
         decision = self._policy.decide(
             PolicyInputs(
                 classification=classification,
@@ -245,6 +258,7 @@ class AgentLoop:
                 recent_tools=session.recent_tools,
                 consecutive_tool_errors=session.consecutive_tool_errors,
                 escalated=session.escalated,
+                pinned=session.pinned_tier is not None,
             )
         )
         previous_tier = session.tier
@@ -449,6 +463,7 @@ class AgentLoop:
                         "tool": name,
                         "status": "error" if tool_result.is_error else "ok",
                         "duration_s": self._clock() - started,
+                        "output": _display_output(tool_result.content),
                     },
                 )
             )
@@ -483,6 +498,7 @@ class AgentLoop:
         for index, action in enumerate(actions):
             call_id = f"json_{index}"
             if isinstance(action, JsonToolError):
+                reason = f"Tool call block malformed: {action.message}"
                 self._bus.emit(
                     Event(
                         "tool_execution_start",
@@ -493,13 +509,19 @@ class AgentLoop:
                 self._bus.emit(
                     Event(
                         "tool_execution_end",
-                        {"call_id": call_id, "tool": "parse", "status": "error", "duration_s": 0.0},
+                        {
+                            "call_id": call_id,
+                            "tool": "parse",
+                            "status": "error",
+                            "duration_s": 0.0,
+                            "output": _display_output(reason),
+                        },
                     )
                 )
                 self._session.append_message(
                     ChatMessage(
                         role="user",
-                        content=f"Tool call block malformed: {action.message}",
+                        content=reason,
                     )
                 )
                 continue
@@ -523,6 +545,7 @@ class AgentLoop:
                         "tool": action.name,
                         "status": "error" if tool_result.is_error else "ok",
                         "duration_s": self._clock() - started,
+                        "output": _display_output(tool_result.content),
                     },
                 )
             )

@@ -61,6 +61,9 @@ class Session:
     recent_tools: tuple[str, ...] = ()  # two most recent, newest first
     consecutive_tool_errors: int = 0
     escalated: bool = False
+    # /model pin: in-memory only (ruling M6.7) — the tier itself persists through
+    # turn records; a resumed session re-pins explicitly.
+    pinned_tier: str | None = None
     turn_count: int = 0
     _store: SessionStore | None = field(default=None, repr=False, compare=False)
 

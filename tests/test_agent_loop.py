@@ -776,3 +776,70 @@ async def test_completed_turn_is_replayable_from_store(tmp_path: Path) -> None:
     assert loaded.tier == "small"
     assert loaded.previous_intent == "code_gen"
     assert [m.content for m in loaded.messages] == ["remember me", "persisted answer"]
+
+
+# --- tool output in events (M6 display) ------------------------------------------
+
+
+async def test_tool_execution_end_carries_output_for_display(tmp_path: Path) -> None:
+    """The TUI renders what a tool returned: the event carries the result content."""
+    tool = FakeTool(reply="wrote hello.txt")
+    rig = build(
+        tmp_path, [tool_events("c1", "echo", "{}"), text_events("done")], tools={"echo": tool}
+    )
+
+    await rig.loop.run_turn("use the tool")
+
+    end = rig.recorder.of("tool_execution_end")[0]
+    assert end.data["output"] == "wrote hello.txt"
+
+
+async def test_tool_execution_end_output_is_truncated_for_events(tmp_path: Path) -> None:
+    """A huge result must not flood the NDJSON stream: events cap the display size."""
+    tool = FakeTool(reply="x" * 5000)
+    rig = build(
+        tmp_path, [tool_events("c1", "echo", "{}"), text_events("done")], tools={"echo": tool}
+    )
+
+    await rig.loop.run_turn("use the tool")
+
+    output = rig.recorder.of("tool_execution_end")[0].data["output"]
+    assert isinstance(output, str)
+    assert output.startswith("x" * 100)
+    assert output.endswith("…")
+    assert len(output) <= 4001  # capped display size + the ellipsis
+
+
+async def test_malformed_json_block_event_reports_the_parse_error(tmp_path: Path) -> None:
+    """Even the parse-failure pseudo-call explains itself through the event output."""
+    rig = build(
+        tmp_path,
+        [
+            text_events('```tool\n{"name": "echo", "arguments"\n```'),
+            text_events("retrying"),
+        ],
+        config_toml=_JSON_PROFILE_TOML,
+    )
+
+    await rig.loop.run_turn("break the protocol")
+
+    end = rig.recorder.of("tool_execution_end")[0]
+    assert end.data["status"] == "error"
+    assert "malformed" in str(end.data["output"])
+
+
+# --- /model pin (M6) ----------------------------------------------------------------
+
+
+async def test_pinned_tier_bypasses_policy_and_reports_pinned(tmp_path: Path) -> None:
+    """`/model mid` pins the session: routing stays advisory until unpinned."""
+    rig = build(tmp_path, [text_events("pinned answer")])
+    rig.session.pinned_tier = "mid"
+    rig.session.tier = "mid"
+
+    await rig.loop.run_turn("hello")
+
+    decided = rig.recorder.of("route_decided")[0]
+    assert decided.data["tier"] == "mid"
+    assert decided.data["reason"] == "pinned"
+    assert rig.session.tier == "mid"

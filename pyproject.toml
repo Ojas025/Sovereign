@@ -52,5 +52,5 @@ mypy_path = "src"
 packages = ["workbench"]
 
 [[tool.mypy.overrides]]
-module = ["laya.*", "agentic_tui.*", "prometheus_client.*"]
+module = ["laya.*", "prometheus_client.*"]
 ignore_missing_imports = true

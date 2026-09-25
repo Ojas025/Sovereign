@@ -21,10 +21,9 @@ from workbench.config import (
     load_config,
     set_config,
 )
-from workbench.core.bootstrap import build_registry, resolve_router
+from workbench.core.bootstrap import build_registry, build_tools, resolve_router
 from workbench.core.events import Event, EventBus
-from workbench.core.protocols import Tool, ToolContext
-from workbench.core.registry import Registry
+from workbench.core.protocols import ToolContext
 from workbench.core.session import Session, SessionStore
 from workbench.llm.client import LLMClientHttp
 from workbench.llm.server import ServerError, ServerManager
@@ -137,16 +136,6 @@ def _print_event(event: Event) -> None:
     )
 
 
-def _tools_from(registry: Registry) -> dict[str, Tool]:
-    tools: dict[str, Tool] = {}
-    for name in registry.entries("tools"):
-        tool = registry.get("tools", name)
-        if not isinstance(tool, Tool):
-            raise ConfigError(f"tool {name!r} does not implement the Tool protocol")
-        tools[name] = tool
-    return tools
-
-
 async def _print_session(config: Config, prompt: str, *, json_stream: bool) -> int:
     """Wire registry/router/policy/loop/server, run one turn, tear the server down."""
     bus = EventBus()
@@ -163,7 +152,7 @@ async def _print_session(config: Config, prompt: str, *, json_stream: bool) -> i
         client=LLMClientHttp(manager.base_url),
         router=resolve_router(registry, config),
         policy=TierPolicy(config.routing),
-        tools=_tools_from(registry),
+        tools=build_tools(registry),
         session=session,
         bus=bus,
         config=config,
@@ -223,8 +212,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_print(config, args.print_prompt, json_stream=args.json_stream)
 
     if args.command is None:
-        parser.print_help()
-        return 0
+        # Bare invocation starts the interactive TUI (ruling M6.11); imported
+        # here so -p/config/models paths never pay for agentui + prompt_toolkit.
+        from workbench.tui import run_tui
+
+        return run_tui(config)
 
     if args.command == "config":
         if args.config_command == "show":

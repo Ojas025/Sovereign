@@ -47,6 +47,17 @@ def _core_sandbox(config: Config) -> Sandbox:
     return BwrapSandbox(Path(config.runtime.workspace_root).expanduser())
 
 
+def build_tools(registry: Registry) -> dict[str, Tool]:
+    """The registry's tools group as the loop's name→Tool map (ruling M6.18)."""
+    tools: dict[str, Tool] = {}
+    for name in registry.entries("tools"):
+        tool = registry.get("tools", name)
+        if not isinstance(tool, Tool):
+            raise ConfigError(f"tool {name!r} does not implement the Tool protocol")
+        tools[name] = tool
+    return tools
+
+
 def resolve_router(registry: Registry, config: Config) -> Router:
     """Look up the configured classification backend (mirrors sandbox resolution)."""
     name = config.routing.backend
