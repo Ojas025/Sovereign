@@ -164,3 +164,12 @@ async def test_reasoning_deltas_surface_before_content_and_arm_ttft() -> None:
 async def test_connection_refused_raises_llm_error() -> None:
     with pytest.raises(LLMError):
         await collect(LLMClientHttp("http://127.0.0.1:1"), make_request())
+
+
+async def test_scripted_text_response_streams_its_own_content() -> None:
+    behavior = FakeBehavior(responses=("text:custom content 123",))
+    with FakeLlamaServer(behavior) as server:
+        events = await collect(LLMClientHttp(server.base_url), make_request())
+
+    text = "".join(e.text for e in events if isinstance(e, TextDelta))
+    assert text == "custom content 123"

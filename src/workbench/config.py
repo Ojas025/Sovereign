@@ -101,6 +101,7 @@ class AgentConfig:
     reflection_nudge_cap: int = 3
     plan_max_retries: int = 2
     token_cap_per_turn: int = 16384
+    session_dir: str = "~/.local/state/workbench/sessions"  # JSONL per session
 
 
 @dataclass(frozen=True, slots=True)

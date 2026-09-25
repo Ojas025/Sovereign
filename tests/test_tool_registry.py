@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from workbench.config import ConfigError, load_config
-from workbench.core.bootstrap import build_registry
-from workbench.core.protocols import Sandbox, Tool
+from workbench.core.bootstrap import build_registry, resolve_router
+from workbench.core.protocols import Router, Sandbox, Tool
 from workbench.core.registry import RegistryError
 from workbench.sandbox.bwrap import BwrapSandbox
 from workbench.tools import headless_confirm
@@ -100,3 +100,30 @@ class TestHeadlessConfirmation:
             await headless_confirm()("dangerous command")
 
         assert any("dangerous command" in record.message for record in caplog.records)
+
+
+class TestRouterWiring:
+    def test_registers_both_routing_backends(self, tmp_path: Path) -> None:
+        registry = build_registry(config(tmp_path))
+
+        assert registry.entries("routers") == ["heuristic", "laya"]
+
+    def test_resolve_router_returns_the_configured_backend(self, tmp_path: Path) -> None:
+        cfg = config(tmp_path)
+
+        router = resolve_router(build_registry(cfg), cfg)
+
+        assert isinstance(router, Router)
+
+    def test_resolve_router_unknown_backend_raises_config_error(
+        self, tmp_path: Path
+    ) -> None:
+        project = tmp_path / "routed"
+        project.mkdir()
+        (project / ".workbench.toml").write_text(
+            '[routing]\nbackend = "routed-llm"\n', encoding="utf-8"
+        )
+        cfg = load_config(home=tmp_path / "home", project_dir=project)
+
+        with pytest.raises(ConfigError, match="routed-llm"):
+            resolve_router(build_registry(cfg), cfg)

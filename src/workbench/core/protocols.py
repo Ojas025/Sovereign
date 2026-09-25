@@ -41,6 +41,11 @@ class ToolSpec:
     parameters: Mapping[str, object] = field(default_factory=dict)
 
 
+# How the model addresses tools: native OpenAI tool_calls, fenced ```tool blocks
+# for templates without tool support, or chat only.
+ToolProtocol = Literal["native", "json", "none"]
+
+
 @dataclass(frozen=True, slots=True)
 class ChatRequest:
     messages: tuple[ChatMessage, ...]
@@ -105,6 +110,11 @@ StreamEvent = (
 
 
 # --- routing ------------------------------------------------------------
+
+# Workflow phase of a task, derived from the tool history (policy stability rule).
+# Lives here as vocabulary so session/loop state can be typed without importing
+# the routing subsystem; routing.policy re-exports it.
+Phase = Literal["explore", "implement", "verify", "none"]
 
 
 @dataclass(frozen=True, slots=True)

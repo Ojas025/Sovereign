@@ -16,7 +16,7 @@ import socket
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -31,7 +31,11 @@ class RecordedRequest:
 
 @dataclass(frozen=True, slots=True)
 class FakeBehavior:
-    """Canned responses; ``responses`` is consumed in order, the last entry repeats."""
+    """Canned responses; ``responses`` is consumed in order, the last entry repeats.
+
+    An entry is ``text`` (default chunks), ``text:<content>`` (that exact content),
+    ``tool_call``, or ``error500``.
+    """
 
     models: tuple[str, ...] = ("fake-model",)
     responses: tuple[str, ...] = ("text",)
@@ -205,6 +209,8 @@ def _make_handler(state: _State) -> type[BaseHTTPRequestHandler]:
             if name == "tool_call":
                 chunks = _tool_call_stream(behavior, model)
             else:
+                if name.startswith("text:"):
+                    behavior = replace(behavior, text_chunks=(name[len("text:") :],))
                 chunks = _text_stream(behavior, model)
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")

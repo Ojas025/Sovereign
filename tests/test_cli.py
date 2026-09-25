@@ -66,3 +66,27 @@ def test_config_debug_lists_layers_and_active_env(tmp_path) -> None:
     assert ".workbench.toml" in result.stdout
     assert "config.toml" in result.stdout
     assert "WB_METRICS_PORT=9601" in result.stdout
+
+
+def test_print_flag_parses_prompt() -> None:
+    from workbench.cli import build_parser
+
+    args = build_parser().parse_args(["-p", "do the thing"])
+
+    assert args.print_prompt == "do the thing"
+    assert args.json_stream is False
+
+
+def test_json_flag_pairs_with_print() -> None:
+    from workbench.cli import build_parser
+
+    args = build_parser().parse_args(["-p", "x", "--json"])
+
+    assert args.json_stream is True
+
+
+def test_json_without_print_is_a_usage_error() -> None:
+    result = run_cli("--json")
+
+    assert result.returncode == 2
+    assert "--json requires -p" in result.stderr

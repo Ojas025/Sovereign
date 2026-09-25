@@ -1,6 +1,7 @@
 """Command-line interface — the workbench's only interface."""
 
 import argparse
+import asyncio
 import json
 import os
 import sys
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from workbench import __version__
+from workbench.agent.loop import AgentLoop
+from workbench.agent.planning import auto_approver
 from workbench.config import (
     ENV_OVERRIDES,
     Config,
@@ -18,7 +21,16 @@ from workbench.config import (
     load_config,
     set_config,
 )
+from workbench.core.bootstrap import build_registry, resolve_router
+from workbench.core.events import Event, EventBus
+from workbench.core.protocols import Tool, ToolContext
+from workbench.core.registry import Registry
+from workbench.core.session import Session, SessionStore
+from workbench.llm.client import LLMClientHttp
+from workbench.llm.server import ServerError, ServerManager
 from workbench.logging_setup import configure_logging
+from workbench.routing.policy import TierPolicy
+from workbench.tools import headless_confirm
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,6 +46,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--workspace", metavar="DIR", help="project workspace root")
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose console logging")
+    parser.add_argument(
+        "-p",
+        "--print",
+        dest="print_prompt",
+        metavar="PROMPT",
+        help="run one task headlessly and print the final answer",
+    )
+    parser.add_argument(
+        "--json",
+        dest="json_stream",
+        action="store_true",
+        help="with -p: emit the agent event stream as NDJSON on stdout",
+    )
 
     subparsers = parser.add_subparsers(dest="command")
 
@@ -96,9 +121,81 @@ def _debug_config() -> None:
     print(f"env: {', '.join(active) if active else '(no WB_* overrides)'}")
 
 
+def _run_print(config: Config, prompt: str, *, json_stream: bool) -> int:
+    """Headless entry: one task against the full stack, answer on stdout."""
+    return asyncio.run(_print_session(config, prompt, json_stream=json_stream))
+
+
+def _print_event(event: Event) -> None:
+    """NDJSON line per event — the machine interface for scripts and e2e tests."""
+    print(
+        json.dumps(
+            {"kind": event.kind, "ts": event.ts, "data": dict(event.data)},
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
+
+
+def _tools_from(registry: Registry) -> dict[str, Tool]:
+    tools: dict[str, Tool] = {}
+    for name in registry.entries("tools"):
+        tool = registry.get("tools", name)
+        if not isinstance(tool, Tool):
+            raise ConfigError(f"tool {name!r} does not implement the Tool protocol")
+        tools[name] = tool
+    return tools
+
+
+async def _print_session(config: Config, prompt: str, *, json_stream: bool) -> int:
+    """Wire registry/router/policy/loop/server, run one turn, tear the server down."""
+    bus = EventBus()
+    if json_stream:
+        bus.subscribe(None, _print_event)
+    registry = build_registry(config)
+    workspace = Path(config.runtime.workspace_root).expanduser()
+    session = Session.create(
+        store=SessionStore(Path(config.agent.session_dir).expanduser()),
+        workspace=str(workspace),
+    )
+    manager = ServerManager(config, bus)
+    loop = AgentLoop(
+        client=LLMClientHttp(manager.base_url),
+        router=resolve_router(registry, config),
+        policy=TierPolicy(config.routing),
+        tools=_tools_from(registry),
+        session=session,
+        bus=bus,
+        config=config,
+        context=ToolContext(workspace_root=workspace, confirm=headless_confirm()),
+        approver=auto_approver,
+    )
+    bus.emit(Event("agent_start", {"session_id": session.id, "mode": "print"}))
+    try:
+        await manager.ensure_running()
+    except ServerError as error:
+        bus.emit(Event("error", {"stage": "server", "message": str(error)}))
+        bus.emit(Event("agent_end", {"outcome": "error"}))
+        print(f"workbench: server failed: {error}", file=sys.stderr)
+        return 1
+    try:
+        outcome = await loop.run_turn(prompt)
+    finally:
+        await manager.stop(reason="print finished")
+    bus.emit(Event("agent_end", {"outcome": outcome.outcome, "rounds": outcome.rounds}))
+    if not json_stream:
+        print(outcome.text)
+    return 1 if outcome.outcome == "error" else 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.json_stream and not args.print_prompt:
+        parser.error("--json requires -p")
+    if args.print_prompt and args.command is not None:
+        parser.error("-p cannot be combined with subcommands")
 
     cli_overrides: dict[str, str] = {}
     if getattr(args, "verbose", False):
@@ -121,6 +218,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         level=config.observability.log_level,
         console=args.verbose,
     )
+
+    if args.print_prompt:
+        return _run_print(config, args.print_prompt, json_stream=args.json_stream)
 
     if args.command is None:
         parser.print_help()

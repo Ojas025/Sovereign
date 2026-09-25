@@ -18,12 +18,11 @@ The policy is a pure function: the caller owns emitting ``route_decided`` /
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 from workbench.config import RoutingConfig
-from workbench.core.protocols import Classification
+from workbench.core.protocols import Classification, Phase
 
-Phase = Literal["explore", "implement", "verify", "none"]
+__all__ = ["Phase", "PolicyInputs", "RouteDecision", "TierPolicy"]
 
 # MVP is two-tier by design (plan decision 7): the tier names are fixed.
 _SMALL = "small"
