@@ -100,7 +100,7 @@ class AgentConfig:
     wall_clock_s: float = 600.0
     reflection_nudge_cap: int = 3
     plan_max_retries: int = 2
-    token_cap_per_turn: int = 16384
+    token_cap_per_turn: int = 100000
     session_dir: str = "~/.local/state/workbench/sessions"  # JSONL per session
 
 
