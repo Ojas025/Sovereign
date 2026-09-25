@@ -12,6 +12,8 @@ from pathlib import Path
 from workbench.config import Config, ConfigError
 from workbench.core.protocols import Router, Sandbox, Tool
 from workbench.core.registry import Registry, RegistryError
+from workbench.models.huggingface import HuggingFaceProvider
+from workbench.models.ollama import OllamaProvider
 from workbench.routing.heuristic import HeuristicRouter
 from workbench.routing.laya_router import LayaRouter
 from workbench.sandbox.bwrap import BwrapSandbox
@@ -28,6 +30,8 @@ def build_registry(config: Config) -> Registry:
 
     registry.register("routers", "heuristic", HeuristicRouter())
     registry.register("routers", "laya", LayaRouter(HeuristicRouter(), config.routing))
+    registry.register("providers", "huggingface", HuggingFaceProvider())
+    registry.register("providers", "ollama", OllamaProvider())
     registry.register("sandboxes", _CORE_SANDBOX, _core_sandbox(config))
     sandbox = _resolve_sandbox(registry, config)
     tools: tuple[Tool, ...] = (

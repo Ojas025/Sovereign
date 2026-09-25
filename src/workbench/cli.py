@@ -24,10 +24,14 @@ from workbench.config import (
 from workbench.core.bootstrap import build_registry, build_tools, resolve_router
 from workbench.core.events import Event, EventBus
 from workbench.core.protocols import ToolContext
+from workbench.core.registry import RegistryError
 from workbench.core.session import Session, SessionStore
 from workbench.llm.client import LLMClientHttp
 from workbench.llm.server import ServerError, ServerManager
 from workbench.logging_setup import configure_logging
+from workbench.models import DownloadError, Store, human_size
+from workbench.models.download import run_download
+from workbench.models.offline import ensure_offline
 from workbench.observability import start_observability
 from workbench.routing.policy import TierPolicy
 from workbench.tools import headless_confirm
@@ -71,6 +75,14 @@ def build_parser() -> argparse.ArgumentParser:
     models_parser = subparsers.add_parser("models", help="manage local models")
     models_sub = models_parser.add_subparsers(dest="models_command")
     models_sub.add_parser("list", help="list configured model profiles")
+    download_parser = models_sub.add_parser(
+        "download", help="fetch a model into the store (the only command that uses the network)"
+    )
+    download_parser.add_argument(
+        "spec",
+        metavar="SPEC",
+        help="hf:org/repo[/file.gguf], ollama:name[:tag], or a bare spec auto-detected by shape",
+    )
 
     obs_parser = subparsers.add_parser(
         "obs", help="local observability stack (Prometheus + Grafana)"
@@ -104,13 +116,49 @@ def _show_config(config: Config, as_json: bool) -> None:
 
 
 def _list_models(config: Config) -> None:
+    """Join profiles against routing tiers and the local store (PLAN §6.1)."""
     if not config.models.profiles:
         print("no model profiles configured (add [models.profiles.<name>] to .workbench.toml)")
         return
+    tiers_by_profile: dict[str, list[str]] = {}
+    for tier, profile_name in config.routing.tiers.items():
+        tiers_by_profile.setdefault(profile_name, []).append(tier)
+    entries = Store(config.models.search_paths).scan()
+    by_path = {entry.path.resolve(): entry for entry in entries}
+    referenced: set[Path] = set()
     for name, profile in sorted(config.models.profiles.items()):
+        tiers = ",".join(sorted(tiers_by_profile.get(name, []))) or "-"
+        entry = by_path.get(Path(profile.path).expanduser().resolve()) if profile.path else None
+        if entry is None:
+            note = "not in store"
+        else:
+            referenced.add(entry.path.resolve())
+            quant = f" {entry.quant}" if entry.quant else ""
+            note = f"store {entry.family}{quant} {human_size(entry.size)}"
         print(
-            f"{name}: {profile.path} (ctx {profile.ctx_len}, tool_calling {profile.tool_calling})"
+            f"{name}: {profile.path} (ctx {profile.ctx_len}, "
+            f"tool_calling {profile.tool_calling}, tier {tiers}, {note})"
         )
+    for entry in entries:
+        if entry.path.resolve() not in referenced:
+            quant = f", {entry.quant}" if entry.quant else ""
+            detail = f"({entry.family}{quant}, {human_size(entry.size)})"
+            print(f"store: {entry.path.name} {detail} at {entry.path}")
+
+
+def _download_models(config: Config, spec: str) -> int:
+    """`models download` — fetch, checksum into the store, warm the laya checkpoint."""
+    # Big pulls are silent until done (T8.3); announce the start so it never looks hung.
+    print(f"downloading {spec} ...")
+    try:
+        report = run_download(config, spec)
+    except (DownloadError, RegistryError) as error:
+        print(f"workbench: {error}", file=sys.stderr)
+        return 1
+    sha = report.entry.sha or "unknown"
+    print(f"downloaded {report.path} ({human_size(report.entry.size)}, sha {sha[:12]})")
+    print(f"laya checkpoint: {report.laya}")
+    return 0
 
 
 def _debug_config() -> None:
@@ -220,6 +268,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         level=config.observability.log_level,
         console=args.verbose,
     )
+    if not (args.command == "models" and args.models_command == "download"):
+        # Constraint 1: everything but `models download` runs offline; the hub
+        # freezes its flags at import, so this must precede any hub usage.
+        ensure_offline()
 
     if args.print_prompt:
         return _run_print(config, args.print_prompt, json_stream=args.json_stream)
@@ -242,6 +294,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.models_command == "list":
             _list_models(config)
             return 0
+        if args.models_command == "download":
+            return _download_models(config, args.spec)
     if args.command == "obs":
         from workbench.observability.stack import ObsError, run_stack
 

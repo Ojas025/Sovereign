@@ -10,18 +10,17 @@ message boundary) — the event loop is not serving frames at that moment.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from typing import Any
 
 from workbench.config import RoutingConfig
 from workbench.core.protocols import Classification, Router
 from workbench.logging_setup import get_logger
+from workbench.models.offline import ensure_offline
 from workbench.routing.questions import INTENT_CRITERIA, WORKBENCH_QUESTIONS
 
 logger = get_logger("router")
 
-_OFFLINE_ENV = ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")
 _CHECKPOINTS: dict[str, tuple[str, str | None]] = {
     "laya": ("convaiinnovations/laya", None),
     "laya-multilingual": ("convaiinnovations/laya", "multilingual"),
@@ -31,16 +30,24 @@ _QUESTIONS = ("intent", "difficulty", "needs_tools")
 _NEEDS_TOOLS_THRESHOLD = 0.5
 
 
+def checkpoint_location(checkpoint: str) -> tuple[str, str | None]:
+    """Repo id + subfolder for a named checkpoint; unknown names are repo ids as-is.
+
+    Shared with the download command's prefetch so the cache is warmed from the
+    same table the router loads from.
+    """
+    return _CHECKPOINTS.get(checkpoint, (checkpoint, None))
+
+
 def _force_offline() -> None:
     # huggingface_hub reads these at import time; set before laya is imported
-    for name in _OFFLINE_ENV:
-        os.environ[name] = "1"
+    ensure_offline()
 
 
 def _load_checkpoint(checkpoint: str) -> Any:
     import laya  # heavy (torch): imported lazily, after the offline env is set
 
-    repo, subfolder = _CHECKPOINTS.get(checkpoint, (checkpoint, None))
+    repo, subfolder = checkpoint_location(checkpoint)
     return laya.load(repo, subfolder=subfolder)
 
 
