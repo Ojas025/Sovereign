@@ -88,7 +88,19 @@ def test_builtins_register_with_help_text(tmp_path: Path) -> None:
 
     register_commands(ui, context)
 
-    for name in ("model", "models", "plan", "stats", "router", "sessions", "resume"):
+    for name in (
+        "model",
+        "models",
+        "plan",
+        "stats",
+        "router",
+        "sessions",
+        "resume",
+        "redact",
+        "review",
+        "knowledge",
+        "sovereignty",
+    ):
         assert name in ui.commands, name
         assert ui.commands[name][1], f"/{name} missing help text"
 

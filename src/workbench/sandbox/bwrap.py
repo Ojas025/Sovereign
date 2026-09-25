@@ -36,7 +36,7 @@ def _scrubbed_env() -> dict[str, str]:
 def _kill_group(proc: subprocess.Popen[str]) -> None:
     """Kill the sandbox and every process inside it (start_new_session = own group)."""
     try:
-        os.killpg(proc.pid, signal.SIGKILL)
+        os.killpg(proc.pid, signal.SIGKILL)  # type: ignore[attr-defined]
     except ProcessLookupError:
         pass  # exited between the timeout and the kill
     except PermissionError:
