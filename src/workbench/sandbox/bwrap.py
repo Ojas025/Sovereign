@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 from pathlib import Path
 
 from workbench.core.protocols import SandboxResult
@@ -36,7 +37,10 @@ def _scrubbed_env() -> dict[str, str]:
 def _kill_group(proc: subprocess.Popen[str]) -> None:
     """Kill the sandbox and every process inside it (start_new_session = own group)."""
     try:
-        os.killpg(proc.pid, signal.SIGKILL)
+        if sys.platform == "win32":
+            proc.kill()
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass  # exited between the timeout and the kill
     except PermissionError:
@@ -98,3 +102,4 @@ class BwrapSandbox:
             argv += ["--setenv", key, env[key]]
         argv += ["--cap-drop", "ALL", "/bin/bash", "-c", command]
         return argv
+

@@ -21,6 +21,10 @@ from workbench.config import Config
 from workbench.core.registry import Registry
 from workbench.core.session import Plan, SessionStore
 from workbench.core.session import Session as SessionState
+from workbench.governance.pii import redact_pii
+from workbench.governance.review import ReviewStore
+from workbench.knowledge.local import LocalKnowledgeStore
+from workbench.sovereignty.status import check_status
 from workbench.tui.plan import render_plan
 from workbench.tui.state import TuiState
 
@@ -162,6 +166,86 @@ def _builtins(ctx: CommandContext) -> list[tuple[str, CommandHandler, str]]:
             f"model: {state.model or '-'} · suggest_plan: {state.suggest_plan}[/dim]"
         )
 
+    async def redact(ui: Session, args: str) -> None:
+        text = args.strip()
+        if not text:
+            ui.print("[dim]usage: /redact <text>[/dim]")
+            return
+        result = redact_pii(text)
+        ui.print(f"[green]{result.text}[/green]")
+        ui.print(f"[dim]redacted: {result.counts or 'none'}[/dim]")
+
+    async def review(ui: Session, args: str) -> None:
+        store = ReviewStore(Path(ctx.config.agent.session_dir).expanduser() / "reviews.jsonl")
+        parts = args.strip().split(maxsplit=2)
+        if not parts or not parts[0]:
+            pending = store.list("pending")
+            if not pending:
+                ui.print("[dim]no pending reviews[/dim]")
+                return
+            for item in pending:
+                ui.print(f"[yellow]{item.id}[/yellow] {item.reason}: {item.content[:120]}")
+            return
+        if parts[0] == "add" and len(parts) >= 3:
+            item = store.add(ctx.session().id, parts[1], parts[2])
+            ui.print(f"[yellow]review queued:[/yellow] {item.id}")
+            return
+        if parts[0] in {"approve", "reject", "modify"} and len(parts) >= 2:
+            try:
+                item = store.decide(parts[1], parts[0], parts[2] if len(parts) > 2 else "")
+            except KeyError:
+                ui.print(f"[red]unknown review:[/red] {parts[1]}")
+                return
+            ui.print(f"[green]review {item.id}: {item.status}[/green]")
+            return
+        ui.print(
+            "[dim]usage: /review | /review add <reason> <content> | "
+            "/review approve|reject <id> [note][/dim]"
+        )
+
+    async def knowledge(ui: Session, args: str) -> None:
+        store = LocalKnowledgeStore(Path(ctx.session().workspace) / ".knowledge")
+        parts = args.strip().split(maxsplit=1)
+        if not parts or parts[0] == "list":
+            docs = store.list()
+            ui.print(f"[dim]{len(docs)} local knowledge document(s)[/dim]")
+            for doc in docs:
+                ui.print(f"[dim]{doc.name}[/dim] — {doc.path}")
+            return
+        if parts[0] == "add" and len(parts) == 2:
+            try:
+                doc = store.ingest(parts[1])
+            except (OSError, ValueError) as error:
+                ui.print(f"[red]ingest failed:[/red] {error}")
+                return
+            ui.print(f"[green]indexed:[/green] {doc.name}")
+            return
+        if parts[0] == "search" and len(parts) == 2:
+            hits = store.search(parts[1])
+            if not hits:
+                ui.print("[dim]no matching local knowledge[/dim]")
+                return
+            for doc, score in hits:
+                preview = doc.text[:180].replace(chr(10), " ")
+                ui.print(f"[green]{score:.0%}[/green] {doc.name} — {preview}")
+            return
+        ui.print(
+            "[dim]usage: /knowledge list | /knowledge add <file> | "
+            "/knowledge search <query>[/dim]"
+        )
+
+    async def sovereignty(ui: Session, args: str) -> None:
+        status = check_status(model_host=ctx.config.server.host)
+        ui.print(
+            f"[{'green' if status.offline_env else 'red'}]offline env: "
+            f"{'PASS' if status.offline_env else 'CHECK'}[/] · "
+            f"[{'green' if status.localhost_model else 'red'}]model endpoint: "
+            f"{'LOCAL' if status.localhost_model else 'NON-LOCAL'}[/] · "
+            f"proxy env: {'disabled' if status.proxy_disabled else 'present'} · "
+            f"overall: {status.status}"
+        )
+        ui.print("[dim]This is a runtime policy check, not a packet-capture measurement.[/dim]")
+
     async def sessions(ui: Session, args: str) -> None:
         ids = ctx.store.list_ids()
         if not ids:
@@ -199,6 +283,10 @@ def _builtins(ctx: CommandContext) -> list[tuple[str, CommandHandler, str]]:
         ("router", router, "Explain the last routing decision"),
         ("sessions", sessions, "List saved sessions"),
         ("resume", resume, "Resume a saved session (/resume [id])"),
+        ("redact", redact, "Redact common PII from supplied text"),
+        ("review", review, "Queue or decide human-review items"),
+        ("knowledge", knowledge, "Manage local knowledge files and search"),
+        ("sovereignty", sovereignty, "Show local/offline runtime policy status"),
     ]
 
 
@@ -268,4 +356,7 @@ def _register_plugins(ui: Session, registry: Registry) -> None:
         ui.register_command(name, plugin, help_text="plugin command")
 
 
-_BUILTIN_COMMANDS = frozenset({"model", "models", "plan", "stats", "router", "sessions", "resume"})
+_BUILTIN_COMMANDS = frozenset(
+    {"model", "models", "plan", "stats", "router", "sessions", "resume",
+     "redact", "review", "knowledge", "sovereignty"}
+)
