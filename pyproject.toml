@@ -1,0 +1,56 @@
+[project]
+name = "workbench"
+version = "0.1.0"
+description = "Minimal, fully local AI workbench: llama.cpp runtime, laya routing, pi-like TUI harness"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "agentic-tui>=0.3.0",
+    "huggingface-hub>=0.20.0",
+    "httpx>=0.27.0",
+    "laya>=0.3.20",
+    "prometheus-client>=0.20.0",
+]
+
+[project.scripts]
+workbench = "workbench.cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/workbench"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "model: tests that load real model checkpoints (run locally, skipped in CI)",
+    "sandbox: tests that execute real bubblewrap sandboxes",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+mypy_path = "src"
+packages = ["workbench"]
+
+[[tool.mypy.overrides]]
+module = ["laya.*", "agentic_tui.*", "prometheus_client.*"]
+ignore_missing_imports = true
