@@ -16,7 +16,7 @@ from workbench.tui.state import TuiState
 _CTX_OK_MAX = 0.6
 _CTX_WARN_MAX = 0.85
 
-_FIELD_SEPARATOR = " · "
+_FIELD_SEPARATOR = " │ "
 
 
 def build_status_line(
@@ -27,8 +27,8 @@ def build_status_line(
     if pinned and state.tier:
         tier = f"{tier} (pinned)"
     fields: list[tuple[str, str]] = [
-        ("", f"tier:{tier}"),
-        ("", f"model:{state.model or '-'}"),
+        ("bold", f"tier:{tier}"),
+        ("ansicyan", f"model:{state.model or '-'}"),
         _ctx_segment(state, config),
         ("", f"intent:{state.intent or '-'}"),
         ("", f"rounds:{state.rounds}/{config.agent.max_rounds}"),
@@ -36,6 +36,7 @@ def build_status_line(
         ("", f"esc:{state.escalations}"),
         ("", f"sandbox:{config.sandbox.backend}"),
         ("", f"ses:{state.session_id[:4] or '-'}"),
+        ("ansimagenta", "/model to switch"),
     ]
     parts: list[tuple[str, str]] = []
     for index, field in enumerate(fields):

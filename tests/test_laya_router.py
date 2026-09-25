@@ -177,3 +177,29 @@ def test_workbench_questions_shape() -> None:
         "meta",
     }
     assert len(WORKBENCH_QUESTIONS["difficulty"]["criteria"]) == 4  # ordinal 0-3
+
+
+def test_load_checkpoint_filters_temperature_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    import types
+    import warnings
+
+    from workbench.routing import laya_router
+
+    class FakeLayaModule(types.ModuleType):
+        def load(self, repo: str, subfolder: str | None = None) -> object:
+            warnings.warn(
+                "laya: this checkpoint ships invalid temperatures or values outside [0.5, 5]; "
+                "using choice:11 +=0.10058280825614929 -> 0.5. Treat confidence from the affected "
+                "entries as uncalibrated.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return "loaded_agent"
+
+    monkeypatch.setitem(sys.modules, "laya", FakeLayaModule("laya"))
+    with warnings.catch_warnings(record=True) as recorded:
+        agent = laya_router._load_checkpoint("convaiinnovations/laya")
+        assert agent == "loaded_agent"
+        matching = [w for w in recorded if "invalid temperatures" in str(w.message)]
+        assert len(matching) == 0

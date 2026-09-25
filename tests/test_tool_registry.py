@@ -23,10 +23,17 @@ def config(tmp_path: Path, **sandbox_overrides: str):
 
 
 class TestBuildRegistry:
-    def test_registers_the_four_core_tools(self, tmp_path: Path) -> None:
+    def test_registers_the_core_tools(self, tmp_path: Path) -> None:
         registry = build_registry(config(tmp_path))
 
-        assert registry.entries("tools") == ["bash", "edit", "read", "write"]
+        assert registry.entries("tools") == [
+            "bash",
+            "edit",
+            "generate_docx",
+            "generate_pdf",
+            "read",
+            "write",
+        ]
 
     def test_registered_tools_satisfy_the_tool_protocol(self, tmp_path: Path) -> None:
         registry = build_registry(config(tmp_path))

@@ -47,6 +47,7 @@ class TranscriptController:
         # committed by a prompt can still be re-created at its end event.
         self._pending: dict[str, tuple[str, str]] = {}
         self._blocks: dict[str, ToolCallContext] = {}
+        self._thinking_seg: object | None = None
 
     # --- public API ---------------------------------------------------------
 
@@ -57,11 +58,14 @@ class TranscriptController:
         data = event.data
         if kind == "message_start":
             await self._open()
+            self._show_thinking()
         elif kind == "message_update":
             await self._open()
+            self._clear_thinking()
             assert self._turn is not None
             self._turn.append_markdown_sync(str(data.get("text", "")))
         elif kind == "tool_execution_start":
+            self._clear_thinking()
             await self._start_tool(data)
         elif kind == "tool_execution_end":
             await self._end_tool(data)
@@ -119,6 +123,7 @@ class TranscriptController:
                 self._on_turn_opened()
 
     async def _close(self) -> None:
+        self._clear_thinking()
         cm = self._turn_cm
         if cm is None:
             return
@@ -128,6 +133,22 @@ class TranscriptController:
         # survive so the end event can re-create a committed block.
         self._blocks.clear()
         await cm.__aexit__(None, None, None)
+
+    def _show_thinking(self) -> None:
+        if self._turn is not None and hasattr(self._turn, "_segments"):
+            from rich.text import Text
+
+            seg = Text("⠋ thinking...", style="dim italic")
+            self._thinking_seg = seg
+            self._turn._segments.append(seg)
+            if hasattr(self._turn, "_rerender"):
+                self._turn._rerender()
+
+    def _clear_thinking(self) -> None:
+        if self._thinking_seg is not None and self._turn is not None:
+            if hasattr(self._turn, "_segments") and self._thinking_seg in self._turn._segments:
+                self._turn._segments.remove(self._thinking_seg)
+            self._thinking_seg = None
 
     # --- tools -----------------------------------------------------------------
 

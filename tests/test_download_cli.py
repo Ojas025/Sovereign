@@ -34,7 +34,7 @@ class _FakeProvider:
 def _config(tmp_path: Path, models_toml: str) -> Config:
     path = tmp_path / "cfg.toml"
     path.write_text(models_toml, encoding="utf-8")
-    return load_config(config_path=path)
+    return load_config(config_path=path, project_dir=tmp_path)
 
 
 def _registry_with(provider: object, name: str = "huggingface") -> Registry:

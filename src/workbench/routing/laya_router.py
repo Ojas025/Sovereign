@@ -45,6 +45,13 @@ def _force_offline() -> None:
 
 
 def _load_checkpoint(checkpoint: str) -> Any:
+    import warnings
+
+    warnings.filterwarnings(
+        "ignore",
+        message=r".*this checkpoint ships invalid temperatures.*",
+        category=RuntimeWarning,
+    )
     import laya  # heavy (torch): imported lazily, after the offline env is set
 
     repo, subfolder = checkpoint_location(checkpoint)

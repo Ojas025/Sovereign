@@ -18,6 +18,7 @@ from workbench.routing.heuristic import HeuristicRouter
 from workbench.routing.laya_router import LayaRouter
 from workbench.sandbox.bwrap import BwrapSandbox
 from workbench.tools.bash import BashTool
+from workbench.tools.documents import GenerateDocxTool, GeneratePdfTool
 from workbench.tools.files import EditTool, ReadTool, WriteTool
 
 _CORE_SANDBOX = "bwrap"
@@ -40,6 +41,8 @@ def build_registry(config: Config) -> Registry:
         WriteTool(config.tools),
         EditTool(config.tools),
         BashTool(sandbox, config.sandbox),
+        GenerateDocxTool(config.tools),
+        GeneratePdfTool(config.tools),
     )
     for tool in tools:
         registry.register("tools", tool.name, tool)

@@ -497,3 +497,37 @@ async def test_plan_accessor_exposes_the_last_rendered_plan_and_clears_on_resume
 
     controller.clear_plan()  # /resume swaps sessions: the old plan must not leak
     assert controller.plan is None
+
+
+async def test_thinking_indicator_appears_at_start_and_clears_on_update() -> None:
+    class TurnWithSegments(FakeTurn):
+        def __init__(self) -> None:
+            super().__init__()
+            self._segments: list[object] = []
+            self.rerenders = 0
+
+        def _rerender(self) -> None:
+            self.rerenders += 1
+
+    class UIWithSegments(FakeUI):
+        def assistant_turn(self) -> TurnWithSegments:
+            turn = TurnWithSegments()
+            self.turns.append(turn)
+            return turn
+
+    ui = UIWithSegments()
+    controller = TranscriptController(ui, TuiState())
+
+    # message_start -> thinking indicator attached to segments
+    await controller.handle(start_message())
+    turn = ui.turns[0]
+    assert len(turn._segments) == 1
+    assert "thinking" in str(turn._segments[0])
+
+    # message_update -> thinking indicator removed from segments
+    await controller.handle(Event("message_update", {"text": "Hello"}))
+    assert len(turn._segments) == 0
+    assert turn.markdown == ["Hello"]
+
+    # turn_end
+    await controller.handle(Event("turn_end", {"outcome": "completed"}))

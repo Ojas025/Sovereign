@@ -48,8 +48,8 @@ def test_status_line_shows_every_documented_field() -> None:
     parts = build_status_line(_state(), _config())
 
     assert _text(parts) == (
-        "tier:mid · model:coder7b · ctx:4.1k/32.8k (12%) · intent:code_gen · "
-        "rounds:3/15 · tok:4.1k · esc:0 · sandbox:bwrap · ses:a1b2"
+        "tier:mid │ model:coder7b │ ctx:4.1k/32.8k (12%) │ intent:code_gen │ "
+        "rounds:3/15 │ tok:4.1k │ esc:0 │ sandbox:bwrap │ ses:a1b2 │ /model to switch"
     )
 
 
@@ -84,8 +84,8 @@ def test_unrouted_session_shows_placeholders_not_crashes() -> None:
 
     text = _text(build_status_line(state, _config()))
 
-    assert text.startswith("tier:- · model:- · ctx:- · intent:- · rounds:0/15")
-    assert text.endswith("sandbox:bwrap · ses:ffff")
+    assert text.startswith("tier:- │ model:- │ ctx:- │ intent:- │ rounds:0/15")
+    assert text.endswith("sandbox:bwrap │ ses:ffff │ /model to switch")
 
 
 def test_pinned_tier_is_marked_in_the_status_line() -> None:
