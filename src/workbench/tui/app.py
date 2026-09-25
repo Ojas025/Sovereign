@@ -42,6 +42,7 @@ from workbench.observability import start_observability
 from workbench.routing.policy import TierPolicy
 from workbench.tui.bridge import PromptBridge, TurnWorker, tui_approver, tui_confirm
 from workbench.tui.commands import CommandContext, register_commands
+from workbench.tui.patch import patch_live_region
 from workbench.tui.state import TuiState
 from workbench.tui.status import build_status_line
 from workbench.tui.transcript import TranscriptController
@@ -116,6 +117,7 @@ def _render_welcome(config: Config) -> Panel:
 
 def run_tui(config: Config) -> int:
     """Interactive entry (ruling M6.11): own the terminal until /quit or Ctrl-D."""
+    patch_live_region()
     try:
         return asyncio.run(_interactive(config))
     except SystemExit as exc:  # agentui's /quit raises SystemExit
