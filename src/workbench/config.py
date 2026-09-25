@@ -81,6 +81,7 @@ class ServerConfig:
     port: int = 8080
     idle_timeout_s: float = 300.0
     restart_max: int = 3
+    models_max: int = 1  # llama-server defaults to 4; single-active GPU budget
 
 
 @dataclass(frozen=True, slots=True)
