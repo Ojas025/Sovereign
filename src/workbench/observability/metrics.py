@@ -26,6 +26,8 @@ _DURATION_BUCKETS = (0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0)
 # Scheduler slip is normally milliseconds; anything approaching seconds is an
 # incident, so the buckets hug zero to make that visible.
 _LAG_BUCKETS = (0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0)
+# Output token latency buckets in seconds (0.005s to 0.5s, i.e. 2 to 200 tok/s).
+_TPOT_BUCKETS = (0.005, 0.01, 0.02, 0.03, 0.05, 0.075, 0.1, 0.2, 0.5)
 
 
 class Metrics:
@@ -69,6 +71,12 @@ class Metrics:
             "llm_ttft_seconds",
             "Time to first streamed token per model request.",
             buckets=_DURATION_BUCKETS,
+            registry=self._registry,
+        )
+        self._llm_tpot = Histogram(
+            "llm_tpot_seconds",
+            "Time per output token for generated completions.",
+            buckets=_TPOT_BUCKETS,
             registry=self._registry,
         )
         self._llm_duration = Histogram(
@@ -193,11 +201,14 @@ class Metrics:
         duration_s: float,
         prompt_tokens: int,
         completion_tokens: int,
+        tpot_s: float | None = None,
     ) -> None:
         """Did a request finish cleanly, how fast did it stream, what did it cost?"""
         self._llm_requests.labels(model=model, tier=tier, status=status).inc()
         if ttft_s is not None:
             self._llm_ttft.observe(ttft_s)
+        if tpot_s is not None:
+            self._llm_tpot.observe(tpot_s)
         self._llm_duration.observe(duration_s)
         if prompt_tokens or completion_tokens:
             self._llm_tokens.labels(direction="prompt", model=model).inc(prompt_tokens)

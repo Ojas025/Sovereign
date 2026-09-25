@@ -125,7 +125,15 @@ class LLMClientHttp:
 
                         for event in self._events_from_chunk(chunk, call_ids):
                             if (
-                                isinstance(event, (TextDelta, ReasoningDelta))
+                                isinstance(
+                                    event,
+                                    (
+                                        TextDelta,
+                                        ReasoningDelta,
+                                        ToolCallStart,
+                                        ToolCallDelta,
+                                    ),
+                                )
                                 and ttft is None
                             ):
                                 ttft = time.monotonic() - started

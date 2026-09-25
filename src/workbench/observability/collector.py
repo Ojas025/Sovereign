@@ -148,14 +148,21 @@ class MetricsCollector:
         if isinstance(usage, Mapping):
             prompt_tokens = _num(usage, "prompt_tokens")
             completion_tokens = _num(usage, "completion_tokens")
+        ttft_s = _opt_num(data, "ttft_s")
+        tpot_s: float | None = None
+        if completion_tokens > 0:
+            gen_time = max(0.0, duration_s - (ttft_s or 0.0))
+            if gen_time > 0.0:
+                tpot_s = gen_time / completion_tokens
         self._metrics.record_llm(
             model=model,
             tier=self._tier_by_model.get(model, "unknown"),
             status=_text(data, "stop_reason"),
-            ttft_s=_opt_num(data, "ttft_s"),
+            ttft_s=ttft_s,
             duration_s=duration_s,
             prompt_tokens=int(prompt_tokens),
             completion_tokens=int(completion_tokens),
+            tpot_s=tpot_s,
         )
 
     def _settle_inflight(self, event: Event, *, status: str) -> None:

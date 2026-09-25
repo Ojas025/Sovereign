@@ -73,7 +73,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum by (tool) (rate(tool_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, tool) (rate(tool_duration_seconds_bucket[5m])))",
           "legendFormat": "{{tool}}",
           "refId": "A"
         }

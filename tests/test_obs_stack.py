@@ -111,11 +111,15 @@ def test_dashboards_are_valid_json_and_query_real_metrics() -> None:
     for metric in (
         "route_decisions_total",
         "llm_ttft_seconds",
+        "llm_tpot_seconds",
         "agent_tasks_total",
         "tool_calls_total",
         "server_active",
     ):
         assert metric in joined, f"{metric} never queried by any dashboard"
+    for expr in expressions:
+        if "histogram_quantile" in expr:
+            assert "by (le" in expr, f"histogram_quantile missing 'by (le)': {expr}"
 
 
 def test_obs_up_and_down_shell_docker_compose(tmp_path: Path) -> None:

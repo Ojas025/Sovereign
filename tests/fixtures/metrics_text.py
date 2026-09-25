@@ -19,6 +19,7 @@ PLAN_METRICS = (
     "route_duration_seconds",
     "llm_requests_total",
     "llm_ttft_seconds",
+    "llm_tpot_seconds",
     "llm_duration_seconds",
     "llm_tokens_total",
     "agent_rounds_total",

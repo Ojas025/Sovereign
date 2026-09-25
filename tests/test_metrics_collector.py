@@ -142,6 +142,7 @@ def test_llm_success_maps_model_to_tier_and_records_usage(tmp_path: Path) -> Non
         status="tool_calls",
     ) == [1.0]
     assert samples(text, "llm_ttft_seconds_sum") == [pytest.approx(0.1)]
+    assert samples(text, "llm_tpot_seconds_sum") == [pytest.approx(0.23)]
     assert samples(text, "llm_duration_seconds_sum") == [pytest.approx(1.25)]
     assert samples(text, "llm_tokens_total", direction="prompt", model=_MINICPM_STEM) == [10.0]
     assert samples(text, "llm_tokens_total", direction="completion", model=_MINICPM_STEM) == [5.0]

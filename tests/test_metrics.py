@@ -32,6 +32,7 @@ def filled() -> Metrics:
         duration_s=1.5,
         prompt_tokens=10,
         completion_tokens=20,
+        tpot_s=0.07,
     )
     metrics.record_task(outcome="completed", rounds=3)
     metrics.record_reflection(verdict="done")
@@ -76,6 +77,7 @@ def test_llm_series_values() -> None:
         status="stop",
     ) == [1.0]
     assert samples(text, "llm_ttft_seconds_sum") == [pytest.approx(0.1)]
+    assert samples(text, "llm_tpot_seconds_sum") == [pytest.approx(0.07)]
     assert samples(text, "llm_duration_seconds_sum") == [pytest.approx(1.5)]
     assert samples(text, "llm_tokens_total", direction="prompt",
                    model="MiniCPM5-2B-Q4_K_M") == [10.0]

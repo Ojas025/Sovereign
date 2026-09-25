@@ -76,6 +76,7 @@ async def test_streams_tool_call_with_arguments_assembled_by_call_id() -> None:
     end = events[-1]
     assert isinstance(end, StreamEnd)
     assert end.stop_reason == "tool_calls"
+    assert end.ttft_s is not None and end.ttft_s >= 0
 
 
 async def test_sends_model_messages_and_tools_in_openai_shape() -> None:
